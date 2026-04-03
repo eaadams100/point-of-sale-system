@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Products — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script src="/js/scanner.js"></script>
+<script>requireAuth(); injectShell('products');</script>
+
+<div class="page-header">
+  <div><h1>Products</h1><p>Manage your product catalog</p></div>
+  <button class="btn btn-primary" id="add-product-btn">+ Add Product</button>
+</div>
+
+<div class="card">
+  <div style="display:flex;gap:10px;margin-bottom:16px">
+    <input id="search" class="form-control" placeholder="Search products…" style="max-width:280px"/>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th><th>Category</th><th>Barcode</th>
+          <th class="text-right">Price</th><th class="text-right">Stock</th>
+          <th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="products-table"><tr><td colspan="7" class="text-muted text-center">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Product Modal -->
+<div class="modal-overlay hidden" id="product-modal">
+  <div class="modal">
+    <h2 id="modal-title">Add Product</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Product Name *</label>
+        <input id="f-name" class="form-control" placeholder="e.g. Coca Cola 500ml"/>
+      </div>
+      <div class="form-group">
+        <label>Barcode</label>
+        <input id="f-barcode" class="form-control" placeholder="Optional"/>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="f-category" class="form-control">
+          <option value="">— Select —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Selling Price (GHS) *</label>
+        <input id="f-price" type="number" class="form-control" min="0" step="0.01"/>
+      </div>
+      <div class="form-group">
+        <label>Cost Price (GHS)</label>
+        <input id="f-cost" type="number" class="form-control" min="0" step="0.01"/>
+      </div>
+      <div class="form-group">
+        <label>Stock Quantity</label>
+        <input id="f-qty" type="number" class="form-control" min="0" value="0"/>
+      </div>
+      <div class="form-group">
+        <label>Low Stock Alert (qty)</label>
+        <input id="f-threshold" type="number" class="form-control" min="0" value="10"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-primary w-full" id="save-product-btn">Save</button>
+      <button class="btn btn-ghost" id="cancel-product-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let products = [];
+let editingId = null;
+
+async function loadProducts() {
+  try {
+    products = await api.get('/products');
+    renderTable(products);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function loadCategories() {
+  // Inline fetch since we don't have a /categories route — use product data
+  const sel = document.getElementById('f-category');
+  const existing = [...new Set(products.filter(p=>p.category_name).map(p=>p.category_name))];
+  sel.innerHTML = '<option value="">— Select —</option>' +
+    existing.map(c => `<option>${c}</option>`).join('');
+}
+
+function renderTable(list) {
+  const tbody = document.getElementById('products-table');
+  if (!list.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center">No products found</td></tr>'; return; }
+  tbody.innerHTML = list.map(p => `
+    <tr>
+      <td><strong>${p.name}</strong></td>
+      <td>${p.category_name || '—'}</td>
+      <td class="text-mono">${p.barcode || '—'}</td>
+      <td class="text-right text-mono">${fmt.currency(p.price)}</td>
+      <td class="text-right">
+        <span class="badge ${p.quantity <= p.low_stock_threshold ? 'badge-danger' : 'badge-success'}">${p.quantity}</span>
+      </td>
+      <td><span class="badge ${p.is_active ? 'badge-success' : 'badge-danger'}">${p.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openEdit(${p.id})">Edit</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  renderTable(products.filter(p => p.name.toLowerCase().includes(q) || (p.barcode||'').includes(q)));
+});
+
+function openModal(id = null) {
+  editingId = id;
+  document.getElementById('modal-title').textContent = id ? 'Edit Product' : 'Add Product';
+  if (id) {
+    const p = products.find(x => x.id === id);
+    document.getElementById('f-name').value      = p.name;
+    document.getElementById('f-barcode').value   = p.barcode || '';
+    document.getElementById('f-price').value     = p.price;
+    document.getElementById('f-cost').value      = p.cost_price || '';
+    document.getElementById('f-qty').value       = p.quantity;
+    document.getElementById('f-threshold').value = p.low_stock_threshold;
+  } else {
+    ['f-name','f-barcode','f-price','f-cost'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-qty').value = 0;
+    document.getElementById('f-threshold').value = 10;
+  }
+  loadCategories();
+  document.getElementById('product-modal').classList.remove('hidden');
+}
+
+function openEdit(id) { openModal(id); }
+
+document.getElementById('add-product-btn').addEventListener('click', () => openModal());
+document.getElementById('cancel-product-btn').addEventListener('click', () =>
+  document.getElementById('product-modal').classList.add('hidden'));
+
+document.getElementById('save-product-btn').addEventListener('click', async () => {
+  const body = {
+    name:               document.getElementById('f-name').value.trim(),
+    barcode:            document.getElementById('f-barcode').value.trim() || null,
+    price:              parseFloat(document.getElementById('f-price').value),
+    cost_price:         parseFloat(document.getElementById('f-cost').value) || 0,
+    quantity:           parseInt(document.getElementById('f-qty').value) || 0,
+    low_stock_threshold:parseInt(document.getElementById('f-threshold').value) || 10,
+    is_active:          true,
+  };
+  if (!body.name || isNaN(body.price)) { toast('Name and price are required', 'error'); return; }
+
+  try {
+    if (editingId) await api.put(`/products/${editingId}`, body);
+    else await api.post('/products', body);
+    toast('Product saved!', 'success');
+    document.getElementById('product-modal').classList.add('hidden');
+    loadProducts();
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+loadProducts();
+
+// Scan a barcode on this page to jump straight to that product's edit modal
+BarcodeScanner.init();
+BarcodeScanner.onScan(code => {
+  const match = products.find(p => p.barcode === code);
+  if (match) {
+    BarcodeScanner.scanSuccess();
+    openEdit(match.id);
+  } else {
+    BarcodeScanner.scanError();
+    toast(`No product found for barcode: ${code}`, 'error');
+  }
+});
+</script>
+</body>
+</html>

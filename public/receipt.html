@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Receipt — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <style>
+    body { background: #e8eaf0; display:flex; justify-content:center; padding: 40px 20px; }
+
+    .receipt-wrap { width: 320px; }
+
+    .receipt-actions {
+      display: flex; gap: 8px; margin-bottom: 20px;
+    }
+
+    .receipt-paper {
+      background: #fff;
+      color: #111;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      line-height: 1.9;
+      padding: 28px 24px;
+      border-radius: 4px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      position: relative;
+    }
+
+    /* Torn edge effect top and bottom */
+    .receipt-paper::before, .receipt-paper::after {
+      content: '';
+      display: block;
+      height: 8px;
+      background: repeating-linear-gradient(90deg, #e8eaf0 0px, #e8eaf0 8px, #fff 8px, #fff 16px);
+      position: absolute; left: 0; right: 0;
+    }
+    .receipt-paper::before { top: 0; }
+    .receipt-paper::after  { bottom: 0; }
+
+    .r-store   { text-align:center; font-size:15px; font-weight:700; letter-spacing:1px; padding: 8px 0 4px; }
+    .r-address { text-align:center; font-size:11px; color:#555; }
+    .r-divider { border:none; border-top: 1px dashed #aaa; margin: 10px 0; }
+    .r-row     { display:flex; justify-content:space-between; }
+    .r-label   { color:#555; }
+    .r-items   { margin: 8px 0; }
+    .r-item    { display:flex; justify-content:space-between; align-items:baseline; }
+    .r-item-name { font-weight:600; }
+    .r-item-sub  { font-size:11px; color:#777; padding-left:12px; }
+    .r-totals  { margin-top: 4px; }
+    .r-grand   { font-size:14px; font-weight:700; border-top: 1px solid #aaa; padding-top:6px; margin-top:4px; }
+    .r-footer  { text-align:center; margin-top:10px; font-size:11px; color:#777; }
+    .r-barcode { text-align:center; margin-top:8px; font-size:9px; letter-spacing:3px; color:#aaa; }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .receipt-actions { display: none; }
+      .receipt-paper { box-shadow: none; }
+      .receipt-paper::before, .receipt-paper::after { display: none; }
+    }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script>
+// requireAuth() is not called here — receipts can be opened directly
+// but we still need the token to fetch sale data
+</script>
+
+<div class="receipt-wrap">
+  <div class="receipt-actions">
+    <button class="btn btn-primary" onclick="window.print()">🖨 Print</button>
+    <button class="btn btn-ghost"   onclick="window.close()">✕ Close</button>
+    <button class="btn btn-ghost"   id="back-btn">← Back to POS</button>
+  </div>
+
+  <div class="receipt-paper" id="receipt-paper">
+    <div style="height:8px"></div> <!-- top torn edge spacer -->
+    <div id="receipt-body" style="padding:8px 0">Loading receipt…</div>
+    <div style="height:8px"></div> <!-- bottom torn edge spacer -->
+  </div>
+</div>
+
+<script>
+document.getElementById('back-btn').addEventListener('click', () => {
+  window.location.href = '/pos.html';
+});
+
+async function loadReceipt() {
+  const params = new URLSearchParams(window.location.search);
+  const saleId = params.get('id');
+  if (!saleId) {
+    document.getElementById('receipt-body').innerHTML = '<div style="text-align:center;padding:20px;color:#c00">No sale ID provided.</div>';
+    return;
+  }
+
+  try {
+    const sale = await api.get(`/sales/${saleId}`);
+    renderReceipt(sale);
+  } catch(e) {
+    document.getElementById('receipt-body').innerHTML = `<div style="text-align:center;padding:20px;color:#c00">Error: ${e.message}</div>`;
+  }
+}
+
+function renderReceipt(sale) {
+  const storeName    = 'My Store';
+  const storeAddress = '123 Main Street, Accra';
+  const storePhone   = '+233 XX XXX XXXX';
+
+  const methodLabel = { cash:'Cash', mobile_money:'Mobile Money', card:'Card/POS', split:'Split Payment' };
+  const items = (sale.items||[]).map(i => `
+    <div class="r-item r-item-name">
+      <span>${i.product_name}</span>
+      <span>GHS ${parseFloat(i.total_price).toFixed(2)}</span>
+    </div>
+    <div class="r-item-sub">${i.quantity} × GHS ${parseFloat(i.unit_price).toFixed(2)}${parseFloat(i.discount||0)>0 ? ` (disc: -GHS ${parseFloat(i.discount).toFixed(2)})` : ''}</div>
+  `).join('');
+
+  const disc = parseFloat(sale.discount||0);
+  const tax  = parseFloat(sale.tax||0);
+
+  document.getElementById('receipt-body').innerHTML = `
+    <div class="r-store">${storeName}</div>
+    <div class="r-address">${storeAddress}</div>
+    <div class="r-address">${storePhone}</div>
+    <hr class="r-divider"/>
+
+    <div class="r-row"><span class="r-label">Date</span><span>${new Date(sale.created_at).toLocaleString('en-GB')}</span></div>
+    <div class="r-row"><span class="r-label">Receipt #</span><span>${sale.reference}</span></div>
+    <div class="r-row"><span class="r-label">Cashier</span><span>${sale.cashier_name||'—'}</span></div>
+    ${sale.customer_name ? `<div class="r-row"><span class="r-label">Customer</span><span>${sale.customer_name}</span></div>` : ''}
+
+    <hr class="r-divider"/>
+
+    <div class="r-items">${items}</div>
+
+    <hr class="r-divider"/>
+
+    <div class="r-totals">
+      <div class="r-row"><span class="r-label">Subtotal</span><span>GHS ${parseFloat(sale.subtotal).toFixed(2)}</span></div>
+      ${disc > 0 ? `<div class="r-row"><span class="r-label">Discount</span><span>- GHS ${disc.toFixed(2)}</span></div>` : ''}
+      ${tax  > 0 ? `<div class="r-row"><span class="r-label">Tax</span><span>GHS ${tax.toFixed(2)}</span></div>` : ''}
+      <div class="r-row r-grand"><span>TOTAL</span><span>GHS ${parseFloat(sale.total_amount).toFixed(2)}</span></div>
+    </div>
+
+    <hr class="r-divider"/>
+    <div class="r-row"><span class="r-label">Payment</span><span>${methodLabel[sale.payment_method]||sale.payment_method}</span></div>
+    ${sale.payment_status === 'voided' ? '<div style="text-align:center;color:#c00;font-weight:700;margin-top:8px">*** VOIDED ***</div>' : ''}
+
+    <div class="r-footer">Thank you for your purchase!</div>
+    <div class="r-footer">Please keep this receipt.</div>
+    <div class="r-barcode">${sale.reference}</div>
+  `;
+
+  document.title = `Receipt — ${sale.reference}`;
+}
+
+// Auto-print if ?print=1 is in URL
+loadReceipt().then(() => {
+  if (new URLSearchParams(window.location.search).get('print') === '1') {
+    setTimeout(() => window.print(), 600);
+  }
+});
+</script>
+</body>
+</html>

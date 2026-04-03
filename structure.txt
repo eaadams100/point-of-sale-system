@@ -1,0 +1,61 @@
+pos-system/
+├── package.json
+├── .env.example
+├── .gitignore
+├── README.md
+├── server.js                    ← Entry point
+│
+├── config/
+│   └── db.js                    ← PostgreSQL connection
+│
+├── middleware/
+│   ├── auth.js                  ← JWT verification
+│   └── roles.js                 ← Role-based access control
+│
+├── routes/
+│   ├── auth.js
+│   ├── products.js
+│   ├── inventory.js
+│   ├── sales.js
+│   ├── payments.js
+│   ├── customers.js
+│   ├── reports.js
+│   └── users.js
+│
+├── controllers/
+│   ├── authController.js
+│   ├── productController.js
+│   ├── inventoryController.js
+│   ├── salesController.js
+│   ├── paymentController.js
+│   ├── customerController.js
+│   ├── reportController.js
+│   └── userController.js
+│
+├── models/
+│   ├── User.js
+│   ├── Product.js
+│   ├── Sale.js
+│   ├── SaleItem.js
+│   ├── Customer.js
+│   ├── Inventory.js
+│   └── Payment.js
+│
+├── database/
+│   └── schema.sql               ← Full DB schema
+│
+└── public/                      ← Frontend (HTML/CSS/JS)
+    ├── index.html               ← Login page
+    ├── dashboard.html
+    ├── pos.html                 ← Main cashier screen
+    ├── products.html
+    ├── inventory.html
+    ├── customers.html
+    ├── reports.html
+    ├── css/
+    │   └── styles.css
+    └── js/
+        ├── api.js               ← Fetch wrapper
+        ├── auth.js
+        ├── pos.js
+        └── utils.js

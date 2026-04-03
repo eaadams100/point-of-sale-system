@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Closing Report — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      .main-content { padding: 0 !important; }
+      .app-shell { display: block !important; }
+      .topbar, .sidebar { display: none !important; }
+      body { background: white; color: black; }
+      .report-wrap { max-width: 100%; }
+      .card { border: 1px solid #ccc; box-shadow: none; background: white; }
+      .stat-card { border: 1px solid #ccc; background: white; }
+      .value, .label { color: black !important; }
+      th, td { color: black !important; border-color: #ccc !important; }
+      .badge { border: 1px solid #ccc; }
+    }
+
+    .report-wrap { max-width: 960px; }
+
+    .report-header-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .report-header-block .store-name {
+      font-size: 20px; font-weight: 700; font-family: var(--mono);
+      color: var(--accent);
+    }
+    .report-header-block .report-meta {
+      text-align: right; font-size: 13px; color: var(--text-muted); line-height: 1.8;
+    }
+    .report-header-block .report-date {
+      font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 2px;
+    }
+
+    .section-heading {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: var(--text-muted);
+      margin: 24px 0 12px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .cashier-row { font-size: 13px; }
+    .cashier-row td { padding: 10px 14px; }
+
+    .sig-block {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      margin-top: 40px;
+    }
+    .sig-line {
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .highlight-row td { background: rgba(108,99,255,0.06) !important; font-weight: 600; }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); requireRole('admin','manager'); injectShell('closing');</script>
+
+<div class="report-wrap">
+  <!-- Toolbar -->
+  <div class="page-header no-print">
+    <div><h1>Closing Report</h1><p>End-of-day summary for a selected date</p></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <div class="form-group" style="margin:0">
+        <input type="date" id="report-date" class="form-control" style="width:160px"/>
+      </div>
+      <button class="btn btn-primary" id="generate-btn">Generate</button>
+      <button class="btn btn-ghost"   id="print-btn">🖨 Print</button>
+    </div>
+  </div>
+
+  <div id="report-content" class="hidden">
+
+    <!-- Report letterhead -->
+    <div class="report-header-block">
+      <div>
+        <div class="store-name" id="rh-store">My Store</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:4px">End-of-Day Closing Report</div>
+      </div>
+      <div class="report-meta">
+        <div class="report-date" id="rh-date">—</div>
+        <div>Generated: <span id="rh-generated">—</span></div>
+        <div>Prepared by: <span id="rh-preparer">—</span></div>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="section-heading">Sales Summary</div>
+    <div class="kpi-grid">
+      <div class="stat-card"><div class="label">Gross Revenue</div><div class="value success" id="kpi-revenue">—</div></div>
+      <div class="stat-card"><div class="label">Transactions</div><div class="value accent"  id="kpi-txns">—</div></div>
+      <div class="stat-card"><div class="label">Avg Sale</div><div class="value"             id="kpi-avg">—</div></div>
+      <div class="stat-card"><div class="label">Discounts</div><div class="value warning"    id="kpi-disc">—</div></div>
+      <div class="stat-card"><div class="label">Voided</div><div class="value danger"        id="kpi-voided">—</div></div>
+    </div>
+
+    <!-- Payment breakdown -->
+    <div class="section-heading">Payment Breakdown</div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Method</th><th class="text-right">Transactions</th><th class="text-right">Amount</th><th class="text-right">% of Total</th></tr></thead>
+          <tbody id="payment-table"></tbody>
+          <tfoot id="payment-tfoot"></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Cashier performance -->
+    <div class="section-heading">Cashier Performance</div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Cashier</th><th class="text-right">Transactions</th><th class="text-right">Revenue</th><th class="text-right">Discounts</th><th class="text-right">Avg Sale</th></tr></thead>
+          <tbody id="cashier-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Top products -->
+    <div class="section-heading">Top Products</div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Product</th><th class="text-right">Units Sold</th><th class="text-right">Revenue</th></tr></thead>
+          <tbody id="products-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Hourly breakdown -->
+    <div class="section-heading">Hourly Breakdown</div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Hour</th><th class="text-right">Transactions</th><th class="text-right">Revenue</th></tr></thead>
+          <tbody id="hourly-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- All transactions -->
+    <div class="section-heading">All Transactions</div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ref</th><th>Time</th><th>Cashier</th><th>Customer</th><th>Method</th><th class="text-right">Total</th><th>Status</th></tr></thead>
+          <tbody id="txn-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Signature block -->
+    <div class="sig-block">
+      <div class="sig-line">Prepared By</div>
+      <div class="sig-line">Reviewed By (Manager)</div>
+      <div class="sig-line">Approved By (Director)</div>
+    </div>
+
+  </div>
+
+  <!-- Empty state -->
+  <div id="report-empty" class="card" style="text-align:center;padding:60px;color:var(--text-muted)">
+    <div style="font-size:32px;margin-bottom:12px">📋</div>
+    <div>Select a date and click <strong>Generate</strong> to produce the closing report.</div>
+  </div>
+</div>
+
+<script>
+// Default date = today
+document.getElementById('report-date').value = new Date().toISOString().slice(0,10);
+
+async function generateReport() {
+  const date = document.getElementById('report-date').value;
+  if (!date) { toast('Please select a date', 'warning'); return; }
+
+  const btn = document.getElementById('generate-btn');
+  btn.disabled = true; btn.textContent = 'Loading…';
+
+  try {
+    // Fetch all sales for the selected date
+    const from = `${date}T00:00:00`;
+    const to   = `${date}T23:59:59`;
+    const [sales, topProducts] = await Promise.all([
+      api.get(`/sales?limit=500&from=${from}&to=${to}`),
+      api.get(`/reports/top-products?period=today&limit=10`),
+    ]);
+
+    const completed = sales.filter(s => s.payment_status === 'completed');
+    const voided    = sales.filter(s => s.payment_status === 'voided');
+
+    // ── KPIs ──────────────────────────────────
+    const revenue  = completed.reduce((s,r) => s + parseFloat(r.total_amount), 0);
+    const discounts= completed.reduce((s,r) => s + parseFloat(r.discount||0), 0);
+    const avg      = completed.length ? revenue / completed.length : 0;
+    document.getElementById('kpi-revenue').textContent = fmt.currency(revenue);
+    document.getElementById('kpi-txns').textContent    = completed.length;
+    document.getElementById('kpi-avg').textContent     = fmt.currency(avg);
+    document.getElementById('kpi-disc').textContent    = fmt.currency(discounts);
+    document.getElementById('kpi-voided').textContent  = voided.length;
+
+    // ── Report header ──────────────────────────
+    const user = Auth.getUser();
+    document.getElementById('rh-date').textContent      = new Date(date).toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+    document.getElementById('rh-generated').textContent = fmt.datetime(new Date());
+    document.getElementById('rh-preparer').textContent  = user ? user.full_name : '—';
+
+    // ── Payment breakdown ──────────────────────
+    const byMethod = {};
+    completed.forEach(s => {
+      const m = s.payment_method;
+      if (!byMethod[m]) byMethod[m] = { count:0, total:0 };
+      byMethod[m].count++;
+      byMethod[m].total += parseFloat(s.total_amount);
+    });
+    const methodLabel = { cash:'Cash', mobile_money:'Mobile Money', card:'Card/POS', split:'Split' };
+    const pmTable = document.getElementById('payment-table');
+    pmTable.innerHTML = Object.entries(byMethod).sort((a,b)=>b[1].total-a[1].total).map(([m,v])=>`
+      <tr>
+        <td>${methodLabel[m]||m}</td>
+        <td class="text-right text-mono">${v.count}</td>
+        <td class="text-right text-mono">${fmt.currency(v.total)}</td>
+        <td class="text-right text-muted">${revenue > 0 ? ((v.total/revenue)*100).toFixed(1)+'%' : '—'}</td>
+      </tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center">No transactions</td></tr>';
+
+    document.getElementById('payment-tfoot').innerHTML = `
+      <tr class="highlight-row">
+        <td><strong>TOTAL</strong></td>
+        <td class="text-right text-mono"><strong>${completed.length}</strong></td>
+        <td class="text-right text-mono"><strong>${fmt.currency(revenue)}</strong></td>
+        <td class="text-right">100%</td>
+      </tr>`;
+
+    // ── Cashier performance ────────────────────
+    const byCashier = {};
+    completed.forEach(s => {
+      const k = s.cashier_name || 'Unknown';
+      if (!byCashier[k]) byCashier[k] = { count:0, revenue:0, discounts:0 };
+      byCashier[k].count++;
+      byCashier[k].revenue   += parseFloat(s.total_amount);
+      byCashier[k].discounts += parseFloat(s.discount||0);
+    });
+    document.getElementById('cashier-table').innerHTML =
+      Object.entries(byCashier).sort((a,b)=>b[1].revenue-a[1].revenue).map(([name,v])=>`
+        <tr class="cashier-row">
+          <td><strong>${name}</strong></td>
+          <td class="text-right text-mono">${v.count}</td>
+          <td class="text-right text-mono">${fmt.currency(v.revenue)}</td>
+          <td class="text-right text-mono">${fmt.currency(v.discounts)}</td>
+          <td class="text-right text-mono">${fmt.currency(v.count ? v.revenue/v.count : 0)}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="text-muted text-center">No data</td></tr>';
+
+    // ── Top products ───────────────────────────
+    document.getElementById('products-table').innerHTML =
+      topProducts.length ? topProducts.map((p,i)=>`
+        <tr>
+          <td class="text-muted">${i+1}</td>
+          <td><strong>${p.product_name}</strong></td>
+          <td class="text-right text-mono">${p.units_sold}</td>
+          <td class="text-right text-mono">${fmt.currency(p.revenue)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="4" class="text-muted text-center">No sales today</td></tr>';
+
+    // ── Hourly breakdown ───────────────────────
+    const byHour = {};
+    completed.forEach(s => {
+      const h = new Date(s.created_at).getHours();
+      if (!byHour[h]) byHour[h] = { count:0, total:0 };
+      byHour[h].count++;
+      byHour[h].total += parseFloat(s.total_amount);
+    });
+    const peakHour = Object.entries(byHour).sort((a,b)=>b[1].total-a[1].total)[0]?.[0];
+    document.getElementById('hourly-table').innerHTML =
+      Object.keys(byHour).length ? Object.keys(byHour).sort((a,b)=>a-b).map(h=>`
+        <tr ${h == peakHour ? 'class="highlight-row"' : ''}>
+          <td>${String(h).padStart(2,'0')}:00 – ${String(parseInt(h)+1).padStart(2,'0')}:00${h == peakHour ? ' 🔥 Peak' : ''}</td>
+          <td class="text-right text-mono">${byHour[h].count}</td>
+          <td class="text-right text-mono">${fmt.currency(byHour[h].total)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="3" class="text-muted text-center">No transactions</td></tr>';
+
+    // ── All transactions ───────────────────────
+    const methodBadge = { cash:'badge-success', mobile_money:'badge-info', card:'badge-warning', split:'badge-info' };
+    document.getElementById('txn-table').innerHTML =
+      sales.length ? sales.map(s=>`
+        <tr>
+          <td class="text-mono" style="font-size:11px">${s.reference}</td>
+          <td class="text-muted">${new Date(s.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td>${s.cashier_name||'—'}</td>
+          <td>${s.customer_name||'<span class="text-muted">Walk-in</span>'}</td>
+          <td><span class="badge ${methodBadge[s.payment_method]||'badge-info'}" style="font-size:10px">${s.payment_method}</span></td>
+          <td class="text-right text-mono">${fmt.currency(s.total_amount)}</td>
+          <td><span class="badge ${s.payment_status==='completed'?'badge-success':'badge-danger'}" style="font-size:10px">${s.payment_status}</span></td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" class="text-muted text-center">No transactions on this date</td></tr>';
+
+    // Show report
+    document.getElementById('report-empty').classList.add('hidden');
+    document.getElementById('report-content').classList.remove('hidden');
+    toast('Report generated!', 'success');
+
+  } catch(e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generate';
+  }
+}
+
+document.getElementById('generate-btn').addEventListener('click', generateReport);
+document.getElementById('print-btn').addEventListener('click', () => {
+  if (document.getElementById('report-content').classList.contains('hidden')) {
+    toast('Generate a report first', 'warning'); return;
+  }
+  window.print();
+});
+
+// Auto-generate if ?date= is in URL
+const urlDate = new URLSearchParams(window.location.search).get('date');
+if (urlDate) {
+  document.getElementById('report-date').value = urlDate;
+  generateReport();
+}
+</script>
+</body>
+</html>

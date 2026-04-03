@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Purchase Orders — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <style>
+    .po-tabs { display:flex; gap:6px; margin-bottom:20px; }
+    .po-tab  { background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); padding:5px 16px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; transition:all 0.15s; }
+    .po-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+    .status-draft    { background:rgba(139,143,168,0.15); color:var(--text-muted); }
+    .status-ordered  { background:rgba(108,99,255,0.15);  color:var(--accent); }
+    .status-partial  { background:rgba(255,181,71,0.15);  color:var(--warning); }
+    .status-received { background:rgba(0,212,170,0.15);   color:var(--accent2); }
+    .status-cancelled{ background:rgba(255,79,109,0.15);  color:var(--danger); }
+
+    .po-detail { display:none; }
+    .po-detail.active { display:block; }
+
+    .item-builder { border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:12px; }
+    .item-builder-header { display:grid; grid-template-columns:1fr 100px 100px 80px; gap:8px; padding:8px 12px; background:var(--surface2); font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px; }
+    .item-builder-row    { display:grid; grid-template-columns:1fr 100px 100px 80px; gap:8px; padding:8px 12px; border-top:1px solid var(--border); align-items:center; }
+
+    .receive-grid { display:grid; grid-template-columns:1fr 80px 80px 80px; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+    .receive-grid:last-child { border-bottom:none; }
+    .receive-header { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px; }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); requireRole('admin','manager'); injectShell('orders');</script>
+
+<div class="page-header">
+  <div><h1>Purchase Orders</h1><p>Reorder stock from suppliers</p></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-ghost" id="suppliers-btn">⚙ Manage Suppliers</button>
+    <button class="btn btn-primary" id="new-po-btn">+ New Order</button>
+  </div>
+</div>
+
+<div class="po-tabs">
+  <button class="po-tab active" data-status="">All</button>
+  <button class="po-tab" data-status="draft">Draft</button>
+  <button class="po-tab" data-status="ordered">Ordered</button>
+  <button class="po-tab" data-status="partial">Partial</button>
+  <button class="po-tab" data-status="received">Received</button>
+  <button class="po-tab" data-status="cancelled">Cancelled</button>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reference</th><th>Supplier</th><th>Items</th><th>Est. Cost</th><th>Status</th><th>Created</th><th>Ordered</th><th></th></tr></thead>
+      <tbody id="po-table"><tr><td colspan="8" class="text-muted text-center">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- New PO Modal -->
+<div class="modal-overlay hidden" id="new-po-modal">
+  <div class="modal" style="max-width:640px">
+    <h2>New Purchase Order</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+      <div class="form-group">
+        <label>Supplier</label>
+        <select id="po-supplier" class="form-control"><option value="">— No supplier —</option></select>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <input id="po-notes" class="form-control" placeholder="Optional"/>
+      </div>
+    </div>
+
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:8px">Items to Order</div>
+    <div class="item-builder">
+      <div class="item-builder-header">
+        <span>Product</span><span>Qty</span><span>Unit Cost (GHS)</span><span></span>
+      </div>
+      <div id="po-items-list"></div>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="add-item-row-btn">+ Add Item</button>
+
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn btn-ghost w-full" id="save-draft-btn">Save as Draft</button>
+      <button class="btn btn-primary w-full" id="save-order-btn">Create & Mark Ordered</button>
+      <button class="btn btn-ghost" id="cancel-po-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- PO Detail Modal -->
+<div class="modal-overlay hidden" id="detail-modal">
+  <div class="modal" style="max-width:600px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div>
+        <h2 id="d-ref" style="margin-bottom:4px">—</h2>
+        <div id="d-status-badge"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="close-detail-btn">✕</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+      <div><div style="font-size:11px;color:var(--text-muted)">Supplier</div><div id="d-supplier" style="font-weight:600">—</div></div>
+      <div><div style="font-size:11px;color:var(--text-muted)">Created</div><div id="d-created">—</div></div>
+      <div><div style="font-size:11px;color:var(--text-muted)">Ordered At</div><div id="d-ordered">—</div></div>
+      <div><div style="font-size:11px;color:var(--text-muted)">Received At</div><div id="d-received">—</div></div>
+    </div>
+
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:10px">Items</div>
+    <div id="d-items"></div>
+
+    <div id="receive-section" class="hidden" style="margin-top:20px">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:10px">Receive Stock</div>
+      <div id="receive-form"></div>
+      <button class="btn btn-success w-full mt-2" id="confirm-receive-btn">✓ Confirm Receipt</button>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:20px;flex-wrap:wrap" id="d-actions"></div>
+  </div>
+</div>
+
+<!-- Suppliers Modal -->
+<div class="modal-overlay hidden" id="suppliers-modal">
+  <div class="modal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">Suppliers</h2>
+      <button class="btn btn-primary btn-sm" id="add-supplier-btn">+ Add</button>
+    </div>
+    <div id="suppliers-list"><div class="text-muted text-center" style="padding:20px">Loading…</div></div>
+    <div id="supplier-form" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+        <div class="form-group" style="grid-column:1/-1"><label>Name *</label><input id="sf-name" class="form-control"/></div>
+        <div class="form-group"><label>Contact</label><input id="sf-contact" class="form-control"/></div>
+        <div class="form-group"><label>Phone</label><input id="sf-phone" class="form-control"/></div>
+        <div class="form-group"><label>Email</label><input id="sf-email" class="form-control" type="email"/></div>
+        <div class="form-group"><label>Address</label><input id="sf-address" class="form-control"/></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" id="save-supplier-btn">Save Supplier</button>
+        <button class="btn btn-ghost"   id="cancel-supplier-btn">Cancel</button>
+      </div>
+    </div>
+    <button class="btn btn-ghost w-full mt-2" onclick="document.getElementById('suppliers-modal').classList.add('hidden')">Close</button>
+  </div>
+</div>
+
+<script>
+let orders = [], suppliers = [], products = [], currentFilter = '', currentPO = null;
+let editingSupplierId = null;
+
+async function load() {
+  try {
+    [orders, suppliers, products] = await Promise.all([
+      api.get('/orders'), api.get('/orders/suppliers'), api.get('/products')
+    ]);
+    renderTable();
+    populateSupplierSelect();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+// ── Table ─────────────────────────────────────
+function renderTable() {
+  const list = currentFilter ? orders.filter(o => o.status === currentFilter) : orders;
+  const tbody = document.getElementById('po-table');
+  if (!list.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-center" style="padding:32px">No purchase orders found</td></tr>'; return; }
+  tbody.innerHTML = list.map(o => `
+    <tr style="cursor:pointer" onclick="openDetail(${o.id})">
+      <td class="text-mono" style="font-size:12px">${o.reference}</td>
+      <td>${o.supplier_name || '<span class="text-muted">—</span>'}</td>
+      <td class="text-muted">${o.item_count} item${o.item_count!=1?'s':''}</td>
+      <td class="text-mono">${o.total_cost ? fmt.currency(o.total_cost) : '—'}</td>
+      <td><span class="badge status-${o.status}">${o.status}</span></td>
+      <td class="text-muted">${fmt.date(o.created_at)}</td>
+      <td class="text-muted">${o.ordered_at ? fmt.date(o.ordered_at) : '—'}</td>
+      <td><button class="btn btn-ghost btn-sm">View</button></td>
+    </tr>`).join('');
+}
+
+document.querySelectorAll('.po-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.po-tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.status;
+    renderTable();
+  });
+});
+
+// ── New PO ────────────────────────────────────
+function populateSupplierSelect() {
+  const sel = document.getElementById('po-supplier');
+  sel.innerHTML = '<option value="">— No supplier —</option>' +
+    suppliers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+}
+
+function addItemRow(productId='', qty=1, cost='') {
+  const row = document.createElement('div');
+  row.className = 'item-builder-row';
+  row.innerHTML = `
+    <select class="form-control item-product" style="font-size:13px">
+      <option value="">— Select product —</option>
+      ${products.map(p=>`<option value="${p.id}" ${p.id==productId?'selected':''}>${p.name}</option>`).join('')}
+    </select>
+    <input type="number" class="form-control item-qty" value="${qty}" min="1" style="font-size:13px"/>
+    <input type="number" class="form-control item-cost" value="${cost}" min="0" step="0.01" placeholder="0.00" style="font-size:13px"/>
+    <button class="btn btn-ghost btn-sm" onclick="this.closest('.item-builder-row').remove()" style="color:var(--danger)">✕</button>
+  `;
+  // Auto-fill cost from product cost_price
+  row.querySelector('.item-product').addEventListener('change', e => {
+    const p = products.find(x=>x.id==e.target.value);
+    if (p && p.cost_price) row.querySelector('.item-cost').value = p.cost_price;
+  });
+  document.getElementById('po-items-list').appendChild(row);
+}
+
+document.getElementById('new-po-btn').addEventListener('click', () => {
+  document.getElementById('po-items-list').innerHTML = '';
+  document.getElementById('po-notes').value = '';
+  addItemRow();
+  document.getElementById('new-po-modal').classList.remove('hidden');
+});
+document.getElementById('add-item-row-btn').addEventListener('click', () => addItemRow());
+document.getElementById('cancel-po-btn').addEventListener('click', () => document.getElementById('new-po-modal').classList.add('hidden'));
+
+async function savePO(markOrdered) {
+  const supplier_id = document.getElementById('po-supplier').value || null;
+  const notes       = document.getElementById('po-notes').value;
+  const rows        = document.querySelectorAll('#po-items-list .item-builder-row');
+  const items = [...rows].map(r => ({
+    product_id:  parseInt(r.querySelector('.item-product').value),
+    qty_ordered: parseInt(r.querySelector('.item-qty').value),
+    unit_cost:   parseFloat(r.querySelector('.item-cost').value) || 0,
+  })).filter(i => i.product_id && i.qty_ordered > 0);
+
+  if (!items.length) { toast('Add at least one item', 'warning'); return; }
+
+  try {
+    const po = await api.post('/orders', { supplier_id, items, notes });
+    if (markOrdered) await api.put(`/orders/${po.id}/status`, { status: 'ordered' });
+    toast('Purchase order created!', 'success');
+    document.getElementById('new-po-modal').classList.add('hidden');
+    load();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+document.getElementById('save-draft-btn').addEventListener('click',  () => savePO(false));
+document.getElementById('save-order-btn').addEventListener('click',  () => savePO(true));
+
+// ── Detail ────────────────────────────────────
+async function openDetail(id) {
+  try {
+    currentPO = await api.get(`/orders/${id}`);
+    populateDetail(currentPO);
+    document.getElementById('detail-modal').classList.remove('hidden');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function populateDetail(po) {
+  document.getElementById('d-ref').textContent      = po.reference;
+  document.getElementById('d-supplier').textContent = po.supplier_name || '—';
+  document.getElementById('d-created').textContent  = fmt.datetime(po.created_at);
+  document.getElementById('d-ordered').textContent  = po.ordered_at ? fmt.datetime(po.ordered_at) : '—';
+  document.getElementById('d-received').textContent = po.received_at ? fmt.datetime(po.received_at) : '—';
+  document.getElementById('d-status-badge').innerHTML = `<span class="badge status-${po.status}">${po.status}</span>`;
+
+  document.getElementById('d-items').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 70px 70px 70px 90px;gap:8px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:4px">
+      <span>Product</span><span>Ordered</span><span>Received</span><span>Unit Cost</span><span>Total</span>
+    </div>` +
+    (po.items||[]).map(i => `
+      <div style="display:grid;grid-template-columns:1fr 70px 70px 70px 90px;gap:8px;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <span>${i.product_name}</span>
+        <span>${i.qty_ordered}</span>
+        <span class="${i.qty_received>=i.qty_ordered?'':'text-muted'}">${i.qty_received}</span>
+        <span class="text-mono">${fmt.currency(i.unit_cost)}</span>
+        <span class="text-mono">${fmt.currency(i.qty_ordered * i.unit_cost)}</span>
+      </div>`).join('');
+
+  // Receive form
+  const canReceive = ['ordered','partial'].includes(po.status);
+  document.getElementById('receive-section').classList.toggle('hidden', !canReceive);
+  if (canReceive) {
+    document.getElementById('receive-form').innerHTML =
+      `<div class="receive-grid receive-header"><span>Product</span><span>Ordered</span><span>Received</span><span>Receive Now</span></div>` +
+      (po.items||[]).filter(i=>i.qty_received<i.qty_ordered).map(i=>`
+        <div class="receive-grid">
+          <span>${i.product_name}</span>
+          <span>${i.qty_ordered}</span>
+          <span>${i.qty_received}</span>
+          <input type="number" class="form-control receive-qty" data-item-id="${i.id}"
+            min="0" max="${i.qty_ordered - i.qty_received}"
+            value="${i.qty_ordered - i.qty_received}" style="width:70px;font-size:13px"/>
+        </div>`).join('');
+  }
+
+  // Actions
+  const actions = [];
+  if (po.status === 'draft')
+    actions.push(`<button class="btn btn-primary btn-sm" onclick="updateStatus('ordered')">Mark as Ordered</button>`);
+  if (['draft','ordered','partial'].includes(po.status))
+    actions.push(`<button class="btn btn-danger btn-sm" onclick="updateStatus('cancelled')">Cancel Order</button>`);
+  document.getElementById('d-actions').innerHTML = actions.join('');
+}
+
+document.getElementById('close-detail-btn').addEventListener('click', () =>
+  document.getElementById('detail-modal').classList.add('hidden'));
+
+async function updateStatus(status) {
+  if (!confirm(`Mark this order as "${status}"?`)) return;
+  try {
+    await api.put(`/orders/${currentPO.id}/status`, { status });
+    toast('Status updated!', 'success');
+    document.getElementById('detail-modal').classList.add('hidden');
+    load();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+document.getElementById('confirm-receive-btn').addEventListener('click', async () => {
+  const items = [...document.querySelectorAll('.receive-qty')]
+    .map(el => ({ item_id: parseInt(el.dataset.itemId), qty_received: parseInt(el.value)||0 }))
+    .filter(i => i.qty_received > 0);
+  if (!items.length) { toast('Enter quantities to receive', 'warning'); return; }
+  try {
+    const result = await api.post(`/orders/${currentPO.id}/receive`, { items });
+    toast(`Stock received! Order status: ${result.status}`, 'success');
+    document.getElementById('detail-modal').classList.add('hidden');
+    load();
+  } catch(e) { toast(e.message,'error'); }
+});
+
+// ── Suppliers modal ───────────────────────────
+document.getElementById('suppliers-btn').addEventListener('click', () => {
+  renderSuppliersList();
+  document.getElementById('supplier-form').classList.add('hidden');
+  document.getElementById('suppliers-modal').classList.remove('hidden');
+});
+
+function renderSuppliersList() {
+  const el = document.getElementById('suppliers-list');
+  if (!suppliers.length) { el.innerHTML = '<div class="text-muted text-center" style="padding:16px">No suppliers yet</div>'; return; }
+  el.innerHTML = suppliers.map(s => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-weight:600">${s.name}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${[s.contact_name,s.phone,s.email].filter(Boolean).join(' · ')}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="editSupplier(${s.id})">Edit</button>
+    </div>`).join('');
+}
+
+document.getElementById('add-supplier-btn').addEventListener('click', () => {
+  editingSupplierId = null;
+  ['sf-name','sf-contact','sf-phone','sf-email','sf-address'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('supplier-form').classList.remove('hidden');
+});
+
+function editSupplier(id) {
+  editingSupplierId = id;
+  const s = suppliers.find(x=>x.id===id);
+  document.getElementById('sf-name').value    = s.name;
+  document.getElementById('sf-contact').value = s.contact_name||'';
+  document.getElementById('sf-phone').value   = s.phone||'';
+  document.getElementById('sf-email').value   = s.email||'';
+  document.getElementById('sf-address').value = s.address||'';
+  document.getElementById('supplier-form').classList.remove('hidden');
+}
+
+document.getElementById('cancel-supplier-btn').addEventListener('click', () =>
+  document.getElementById('supplier-form').classList.add('hidden'));
+
+document.getElementById('save-supplier-btn').addEventListener('click', async () => {
+  const body = {
+    name:         document.getElementById('sf-name').value.trim(),
+    contact_name: document.getElementById('sf-contact').value.trim()||null,
+    phone:        document.getElementById('sf-phone').value.trim()||null,
+    email:        document.getElementById('sf-email').value.trim()||null,
+    address:      document.getElementById('sf-address').value.trim()||null,
+    is_active:    true,
+  };
+  if (!body.name) { toast('Supplier name required','error'); return; }
+  try {
+    if (editingSupplierId) await api.put(`/orders/suppliers/${editingSupplierId}`, body);
+    else                   await api.post('/orders/suppliers', body);
+    toast('Supplier saved!','success');
+    suppliers = await api.get('/orders/suppliers');
+    populateSupplierSelect();
+    renderSuppliersList();
+    document.getElementById('supplier-form').classList.add('hidden');
+  } catch(e) { toast(e.message,'error'); }
+});
+
+load();
+</script>
+</body>
+</html>

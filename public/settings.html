@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Settings — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <style>
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .settings-section { margin-bottom: 28px; }
+    .settings-section h3 {
+      font-size: 13px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.6px; color: var(--text-muted);
+      margin-bottom: 16px; padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-row .t-label { font-size: 13px; font-weight: 500; }
+    .toggle-row .t-desc  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: var(--border);
+      border-radius: 22px; cursor: pointer; transition: 0.2s;
+    }
+    .toggle-slider:before {
+      content:''; position:absolute; width:16px; height:16px;
+      left:3px; top:3px; background:#fff; border-radius:50%; transition:0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--accent2); }
+    .toggle input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+    .preview-receipt {
+      background: #fff; color: #111;
+      font-family: 'Courier New', monospace; font-size: 11px;
+      line-height: 1.8; padding: 20px; border-radius: 8px;
+      border: 1px dashed #ccc; max-width: 260px; margin: 0 auto;
+    }
+    .preview-receipt .pr-title { text-align:center; font-weight:700; font-size:13px; }
+    .preview-receipt .pr-small { text-align:center; font-size:10px; color:#666; }
+    .preview-receipt hr { border:none; border-top:1px dashed #aaa; margin:8px 0; }
+
+    .saved-toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--accent2); color: #0f1117; padding: 10px 24px;
+      border-radius: 8px; font-weight: 700; font-size: 13px;
+      opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999;
+    }
+    .saved-toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); requireRole('admin'); injectShell('settings');</script>
+
+<div class="page-header">
+  <div><h1>System Settings</h1><p>Store configuration and preferences</p></div>
+  <button class="btn btn-primary" id="save-all-btn">Save All Changes</button>
+</div>
+
+<div class="settings-grid">
+
+  <!-- Store Info -->
+  <div class="card">
+    <div class="settings-section">
+      <h3>🏪 Store Information</h3>
+      <div class="form-group"><label>Store Name</label><input id="s-store_name" class="form-control"/></div>
+      <div class="form-group"><label>Address</label><input id="s-store_address" class="form-control"/></div>
+      <div class="form-group"><label>Phone</label><input id="s-store_phone" class="form-control"/></div>
+      <div class="form-group"><label>Email</label><input id="s-store_email" class="form-control" type="email"/></div>
+      <div class="form-group"><label>Currency Symbol</label><input id="s-store_currency" class="form-control" style="max-width:100px"/></div>
+    </div>
+
+    <div class="settings-section">
+      <h3>🧾 Receipt</h3>
+      <div class="form-group"><label>Receipt Footer Message</label><input id="s-receipt_footer" class="form-control" placeholder="e.g. Thank you for your purchase!"/></div>
+      <div style="margin-top:16px">
+        <div class="section-label" style="font-size:11px;color:var(--text-muted);margin-bottom:10px">PREVIEW</div>
+        <div class="preview-receipt" id="receipt-preview">
+          <div class="pr-title" id="prev-name">My Store</div>
+          <div class="pr-small" id="prev-address">123 Main Street</div>
+          <div class="pr-small" id="prev-phone">+233 XX XXX XXXX</div>
+          <hr/>
+          <div>Item A × 1 ............ 10.00</div>
+          <div>Item B × 2 ............ 20.00</div>
+          <hr/>
+          <div style="font-weight:700">TOTAL .............. 30.00</div>
+          <hr/>
+          <div class="pr-small" id="prev-footer">Thank you for your purchase!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tax & Loyalty -->
+  <div>
+    <div class="card" style="margin-bottom:20px">
+      <div class="settings-section" style="margin-bottom:0">
+        <h3>💰 Tax Configuration</h3>
+        <div class="form-group">
+          <label>Tax Rate (%)</label>
+          <input id="s-tax_rate" type="number" class="form-control" min="0" max="100" step="0.01" style="max-width:120px"/>
+          <div class="text-muted mt-1" style="font-size:11px">Set to 0 to disable tax. Applied automatically at checkout.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="settings-section" style="margin-bottom:0">
+        <h3>⭐ Loyalty Programme</h3>
+        <div class="toggle-row">
+          <div>
+            <div class="t-label">Enable Loyalty Points</div>
+            <div class="t-desc">Customers earn points on every purchase</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="s-loyalty_enabled"/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div id="loyalty-config" style="margin-top:16px">
+          <div class="form-group">
+            <label>Points earned per GHS spent</label>
+            <input id="s-loyalty_rate" type="number" class="form-control" min="0.1" step="0.1" style="max-width:120px"/>
+            <div class="text-muted mt-1" style="font-size:11px">e.g. 1 = 1 point per GHS 1 spent</div>
+          </div>
+          <div class="form-group">
+            <label>Points needed to redeem GHS 1</label>
+            <input id="s-loyalty_redeem" type="number" class="form-control" min="1" step="1" style="max-width:120px"/>
+            <div class="text-muted mt-1" style="font-size:11px" id="loyalty-example">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="settings-section" style="margin-bottom:0">
+        <h3>⚙ System Preferences</h3>
+        <div class="toggle-row">
+          <div>
+            <div class="t-label">Low Stock Alerts on Dashboard</div>
+            <div class="t-desc">Show warnings when products fall below threshold</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="s-low_stock_alert"/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="saved-toast" id="saved-toast">✓ Settings saved successfully</div>
+
+<script>
+let settings = {};
+
+async function loadSettings() {
+  try {
+    settings = await api.get('/settings');
+    populate(settings);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function populate(s) {
+  // Text inputs
+  ['store_name','store_address','store_phone','store_email','store_currency',
+   'receipt_footer','tax_rate','loyalty_rate','loyalty_redeem'].forEach(key => {
+    const el = document.getElementById(`s-${key}`);
+    if (el) el.value = s[key] || '';
+  });
+  // Checkboxes
+  document.getElementById('s-loyalty_enabled').checked  = s.loyalty_enabled === 'true';
+  document.getElementById('s-low_stock_alert').checked  = s.low_stock_alert !== 'false';
+  // Preview & example
+  updatePreview();
+  updateLoyaltyExample();
+}
+
+function updatePreview() {
+  document.getElementById('prev-name').textContent    = document.getElementById('s-store_name').value    || 'My Store';
+  document.getElementById('prev-address').textContent = document.getElementById('s-store_address').value || '';
+  document.getElementById('prev-phone').textContent   = document.getElementById('s-store_phone').value   || '';
+  document.getElementById('prev-footer').textContent  = document.getElementById('s-receipt_footer').value || '';
+}
+
+function updateLoyaltyExample() {
+  const rate   = parseFloat(document.getElementById('s-loyalty_rate').value)   || 1;
+  const redeem = parseFloat(document.getElementById('s-loyalty_redeem').value) || 100;
+  document.getElementById('loyalty-example').textContent =
+    `e.g. GHS 50 purchase = ${Math.floor(50*rate)} pts → worth GHS ${(Math.floor(50*rate)/redeem).toFixed(2)}`;
+}
+
+// Live preview
+['s-store_name','s-store_address','s-store_phone','s-receipt_footer'].forEach(id =>
+  document.getElementById(id)?.addEventListener('input', updatePreview));
+['s-loyalty_rate','s-loyalty_redeem'].forEach(id =>
+  document.getElementById(id)?.addEventListener('input', updateLoyaltyExample));
+
+document.getElementById('save-all-btn').addEventListener('click', async () => {
+  const body = {
+    store_name:      document.getElementById('s-store_name').value.trim(),
+    store_address:   document.getElementById('s-store_address').value.trim(),
+    store_phone:     document.getElementById('s-store_phone').value.trim(),
+    store_email:     document.getElementById('s-store_email').value.trim(),
+    store_currency:  document.getElementById('s-store_currency').value.trim() || 'GHS',
+    receipt_footer:  document.getElementById('s-receipt_footer').value.trim(),
+    tax_rate:        document.getElementById('s-tax_rate').value || '0',
+    loyalty_enabled: document.getElementById('s-loyalty_enabled').checked ? 'true' : 'false',
+    loyalty_rate:    document.getElementById('s-loyalty_rate').value || '1',
+    loyalty_redeem:  document.getElementById('s-loyalty_redeem').value || '100',
+    low_stock_alert: document.getElementById('s-low_stock_alert').checked ? 'true' : 'false',
+  };
+  try {
+    await api.put('/settings', body);
+    const t = document.getElementById('saved-toast');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+loadSettings();
+</script>
+</body>
+</html>

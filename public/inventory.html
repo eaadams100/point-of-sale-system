@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Inventory — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script src="/js/scanner.js"></script>
+<script>requireAuth(); injectShell('inventory');</script>
+
+<div class="page-header">
+  <div><h1>Inventory</h1><p>Stock levels and adjustments</p></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 340px;gap:20px">
+  <div class="card">
+    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+      <input id="search" class="form-control" placeholder="Search products…" style="max-width:260px"/>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="low-stock-only"/> Low stock only
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Product</th><th>Category</th><th class="text-right">Current Stock</th><th class="text-right">Alert At</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody id="inv-table"><tr><td colspan="6" class="text-muted text-center">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="card">
+      <div style="font-size:13px;font-weight:700;margin-bottom:16px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Restock Product</div>
+      <div class="form-group">
+        <label>Product</label>
+        <select id="restock-product" class="form-control"><option>Loading…</option></select>
+      </div>
+      <div class="form-group">
+        <label>Quantity to Add</label>
+        <input id="restock-qty" type="number" class="form-control" min="1" value="1"/>
+      </div>
+      <div class="form-group">
+        <label>Note</label>
+        <input id="restock-note" class="form-control" placeholder="e.g. Supplier delivery"/>
+      </div>
+      <button class="btn btn-success w-full" id="restock-btn">+ Add Stock</button>
+    </div>
+
+    <div class="card">
+      <div style="font-size:13px;font-weight:700;margin-bottom:16px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Manual Adjustment</div>
+      <div class="form-group">
+        <label>Product</label>
+        <select id="adjust-product" class="form-control"><option>Loading…</option></select>
+      </div>
+      <div class="form-group">
+        <label>Set Exact Quantity</label>
+        <input id="adjust-qty" type="number" class="form-control" min="0"/>
+      </div>
+      <div class="form-group">
+        <label>Reason</label>
+        <input id="adjust-note" class="form-control" placeholder="e.g. Stock count correction"/>
+      </div>
+      <button class="btn btn-ghost w-full" id="adjust-btn">Apply Adjustment</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let products = [];
+
+async function loadInventory() {
+  try {
+    products = await api.get('/products');
+    renderTable(products);
+    populateSelects(products);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function renderTable(list) {
+  const tbody = document.getElementById('inv-table');
+  if (!list.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No products</td></tr>'; return; }
+  tbody.innerHTML = list.map(p => `
+    <tr>
+      <td><strong>${p.name}</strong></td>
+      <td>${p.category_name || '—'}</td>
+      <td class="text-right text-mono">${p.quantity}</td>
+      <td class="text-right text-muted">${p.low_stock_threshold}</td>
+      <td><span class="badge ${p.quantity <= p.low_stock_threshold ? 'badge-danger' : 'badge-success'}">
+        ${p.quantity === 0 ? 'Out of Stock' : p.quantity <= p.low_stock_threshold ? 'Low' : 'OK'}
+      </span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="quickRestock(${p.id})">+ Restock</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function populateSelects(list) {
+  const options = list.map(p => `<option value="${p.id}">${p.name} (${p.quantity} in stock)</option>`).join('');
+  document.getElementById('restock-product').innerHTML = options;
+  document.getElementById('adjust-product').innerHTML  = options;
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  let list = products.filter(p => p.name.toLowerCase().includes(q));
+  if (document.getElementById('low-stock-only').checked)
+    list = list.filter(p => p.quantity <= p.low_stock_threshold);
+  renderTable(list);
+});
+
+document.getElementById('low-stock-only').addEventListener('change', () => {
+  document.getElementById('search').dispatchEvent(new Event('input'));
+});
+
+document.getElementById('restock-btn').addEventListener('click', async () => {
+  const product_id = parseInt(document.getElementById('restock-product').value);
+  const quantity   = parseInt(document.getElementById('restock-qty').value);
+  const note       = document.getElementById('restock-note').value;
+  if (!quantity || quantity < 1) { toast('Enter a valid quantity', 'error'); return; }
+  try {
+    await api.post('/inventory/restock', { product_id, quantity, note });
+    toast('Stock updated!', 'success');
+    loadInventory();
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('adjust-btn').addEventListener('click', async () => {
+  const product_id    = parseInt(document.getElementById('adjust-product').value);
+  const new_quantity  = parseInt(document.getElementById('adjust-qty').value);
+  const note          = document.getElementById('adjust-note').value;
+  if (isNaN(new_quantity) || new_quantity < 0) { toast('Enter a valid quantity', 'error'); return; }
+  if (!confirm(`Set stock to ${new_quantity}?`)) return;
+  try {
+    await api.post('/inventory/adjust', { product_id, new_quantity, note });
+    toast('Inventory adjusted!', 'success');
+    loadInventory();
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+function quickRestock(productId) {
+  const sel = document.getElementById('restock-product');
+  sel.value = productId;
+  document.getElementById('restock-qty').focus();
+}
+
+loadInventory();
+
+// Scan a barcode to instantly select it in the restock panel
+BarcodeScanner.init();
+BarcodeScanner.onScan(code => {
+  const match = products.find(p => p.barcode === code);
+  if (match) {
+    BarcodeScanner.scanSuccess();
+    quickRestock(match.id);
+    toast(`📦 ${match.name} selected for restock`, 'success');
+  } else {
+    BarcodeScanner.scanError();
+    toast(`No product found for barcode: ${code}`, 'error');
+  }
+});
+</script>
+</body>
+</html>

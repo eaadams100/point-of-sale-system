@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Coupons — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <style>
+    .coupon-code {
+      font-family: var(--mono); font-size: 15px; font-weight: 700;
+      background: var(--surface2); border: 1px dashed var(--border);
+      padding: 4px 10px; border-radius: 6px; letter-spacing: 1px;
+      color: var(--accent);
+    }
+    .usage-bar-wrap { width: 80px; height: 5px; background: var(--border); border-radius: 3px; display:inline-block; vertical-align:middle; margin-left:6px; }
+    .usage-bar { height:5px; border-radius:3px; background: var(--accent2); }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); requireRole('admin','manager'); injectShell('coupons');</script>
+
+<div class="page-header">
+  <div><h1>Coupons & Discounts</h1><p>Create and manage discount codes</p></div>
+  <button class="btn btn-primary" id="add-btn">+ New Coupon</button>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th><th>Type</th><th>Value</th><th>Min Order</th>
+          <th>Valid Until</th><th>Usage</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="coupons-table">
+        <tr><td colspan="8" class="text-muted text-center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay hidden" id="coupon-modal">
+  <div class="modal" style="max-width:500px">
+    <h2 id="modal-title">New Coupon</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Coupon Code *</label>
+        <input id="f-code" class="form-control" placeholder="e.g. SAVE10" style="text-transform:uppercase;font-family:var(--mono);letter-spacing:1px"/>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Description</label>
+        <input id="f-desc" class="form-control" placeholder="e.g. 10% off all orders"/>
+      </div>
+      <div class="form-group">
+        <label>Discount Type *</label>
+        <select id="f-type" class="form-control">
+          <option value="percent">Percentage (%)</option>
+          <option value="fixed">Fixed Amount (GHS)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Value *</label>
+        <input id="f-value" type="number" class="form-control" min="0.01" step="0.01" placeholder="e.g. 10"/>
+      </div>
+      <div class="form-group">
+        <label>Min Order (GHS)</label>
+        <input id="f-min" type="number" class="form-control" min="0" step="0.01" value="0"/>
+      </div>
+      <div class="form-group">
+        <label>Max Uses (blank = unlimited)</label>
+        <input id="f-maxuses" type="number" class="form-control" min="1" placeholder="Unlimited"/>
+      </div>
+      <div class="form-group">
+        <label>Valid From</label>
+        <input id="f-from" type="date" class="form-control"/>
+      </div>
+      <div class="form-group">
+        <label>Valid Until</label>
+        <input id="f-until" type="date" class="form-control"/>
+      </div>
+      <div class="form-group" id="status-group" style="grid-column:1/-1">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input type="checkbox" id="f-active" checked/>
+          <span>Coupon is active</span>
+        </label>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-primary w-full" id="save-btn">Save Coupon</button>
+      <button class="btn btn-ghost" id="cancel-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let coupons = [];
+let editingId = null;
+
+async function load() {
+  try {
+    coupons = await api.get('/coupons');
+    render(coupons);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function render(list) {
+  const tbody = document.getElementById('coupons-table');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-center" style="padding:40px">No coupons yet. Create one to get started.</td></tr>';
+    return;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  tbody.innerHTML = list.map(c => {
+    const expired  = c.valid_until && c.valid_until < today;
+    const notYet   = c.valid_from  && c.valid_from  > today;
+    const maxed    = c.max_uses !== null && c.uses_count >= c.max_uses;
+    const usagePct = c.max_uses ? Math.min(100, (c.uses_count / c.max_uses) * 100) : 0;
+    let statusBadge;
+    if (!c.is_active) statusBadge = `<span class="badge badge-danger">Inactive</span>`;
+    else if (expired)  statusBadge = `<span class="badge badge-danger">Expired</span>`;
+    else if (notYet)   statusBadge = `<span class="badge badge-warning">Scheduled</span>`;
+    else if (maxed)    statusBadge = `<span class="badge badge-warning">Maxed Out</span>`;
+    else               statusBadge = `<span class="badge badge-success">Active</span>`;
+
+    return `<tr>
+      <td><span class="coupon-code">${c.code}</span>${c.description ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px">${c.description}</div>` : ''}</td>
+      <td>${c.type === 'percent' ? 'Percent' : 'Fixed'}</td>
+      <td class="text-mono">${c.type === 'percent' ? c.value + '%' : fmt.currency(c.value)}</td>
+      <td class="text-muted">${parseFloat(c.min_order) > 0 ? fmt.currency(c.min_order) : '—'}</td>
+      <td class="text-muted">${c.valid_until ? c.valid_until : '—'}</td>
+      <td>
+        <span style="font-size:12px">${c.uses_count}${c.max_uses ? ` / ${c.max_uses}` : ''}</span>
+        ${c.max_uses ? `<div class="usage-bar-wrap"><div class="usage-bar" style="width:${usagePct}%"></div></div>` : ''}
+      </td>
+      <td>${statusBadge}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openEdit(${c.id})">Edit</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function openModal(id = null) {
+  editingId = id;
+  document.getElementById('modal-title').textContent = id ? 'Edit Coupon' : 'New Coupon';
+  document.getElementById('status-group').style.display = id ? '' : 'none';
+  if (id) {
+    const c = coupons.find(x => x.id === id);
+    document.getElementById('f-code').value    = c.code;
+    document.getElementById('f-code').disabled = true;
+    document.getElementById('f-desc').value    = c.description || '';
+    document.getElementById('f-type').value    = c.type;
+    document.getElementById('f-value').value   = c.value;
+    document.getElementById('f-min').value     = c.min_order || 0;
+    document.getElementById('f-maxuses').value = c.max_uses || '';
+    document.getElementById('f-from').value    = c.valid_from  ? c.valid_from.slice(0,10)  : '';
+    document.getElementById('f-until').value   = c.valid_until ? c.valid_until.slice(0,10) : '';
+    document.getElementById('f-active').checked = c.is_active;
+  } else {
+    ['f-code','f-desc','f-from','f-until','f-maxuses'].forEach(f => document.getElementById(f).value = '');
+    document.getElementById('f-code').disabled = false;
+    document.getElementById('f-type').value  = 'percent';
+    document.getElementById('f-value').value = '';
+    document.getElementById('f-min').value   = 0;
+    document.getElementById('f-active').checked = true;
+  }
+  document.getElementById('coupon-modal').classList.remove('hidden');
+  document.getElementById('f-code').focus();
+}
+
+function openEdit(id) { openModal(id); }
+document.getElementById('add-btn').addEventListener('click', () => openModal());
+document.getElementById('cancel-btn').addEventListener('click', () =>
+  document.getElementById('coupon-modal').classList.add('hidden'));
+
+// Auto-uppercase code
+document.getElementById('f-code').addEventListener('input', e => {
+  const pos = e.target.selectionStart;
+  e.target.value = e.target.value.toUpperCase();
+  e.target.setSelectionRange(pos, pos);
+});
+
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const body = {
+    code:        document.getElementById('f-code').value.trim().toUpperCase(),
+    description: document.getElementById('f-desc').value.trim() || null,
+    type:        document.getElementById('f-type').value,
+    value:       parseFloat(document.getElementById('f-value').value),
+    min_order:   parseFloat(document.getElementById('f-min').value) || 0,
+    max_uses:    parseInt(document.getElementById('f-maxuses').value) || null,
+    valid_from:  document.getElementById('f-from').value  || null,
+    valid_until: document.getElementById('f-until').value || null,
+    is_active:   document.getElementById('f-active').checked,
+  };
+  if (!body.code) { toast('Coupon code is required', 'error'); return; }
+  if (!body.value || isNaN(body.value)) { toast('Value is required', 'error'); return; }
+  if (body.type === 'percent' && (body.value <= 0 || body.value > 100)) {
+    toast('Percentage must be between 1 and 100', 'error'); return;
+  }
+  try {
+    if (editingId) await api.put(`/coupons/${editingId}`, body);
+    else           await api.post('/coupons', body);
+    toast(editingId ? 'Coupon updated!' : 'Coupon created!', 'success');
+    document.getElementById('coupon-modal').classList.add('hidden');
+    load();
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+load();
+</script>
+</body>
+</html>

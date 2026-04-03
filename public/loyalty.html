@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Loyalty — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <style>
+    .points-badge {
+      font-family: var(--mono); font-size: 18px; font-weight: 700;
+      color: var(--warning); display: flex; align-items: center; gap: 6px;
+    }
+    .log-earn   { color: var(--accent2); }
+    .log-redeem { color: var(--danger); }
+    .log-adjust { color: var(--warning); }
+    .log-expire { color: var(--text-muted); }
+
+    .customer-card {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 8px; cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .customer-card:hover { border-color: var(--accent); }
+    .customer-card.selected { border-color: var(--accent); background: var(--surface2); }
+    .customer-card .c-name  { font-weight: 600; font-size: 14px; }
+    .customer-card .c-phone { font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); injectShell('loyalty');</script>
+
+<div class="page-header">
+  <div><h1>Loyalty Points</h1><p>Customer rewards management</p></div>
+</div>
+
+<div style="display:grid;grid-template-columns:320px 1fr;gap:20px">
+
+  <!-- Customer list -->
+  <div>
+    <div class="form-group" style="margin-bottom:12px">
+      <input id="search" class="form-control" placeholder="Search customer…"/>
+    </div>
+    <div id="customer-list" style="max-height:calc(100vh - 220px);overflow-y:auto">
+      <div class="text-muted text-center" style="padding:24px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Selected customer detail -->
+  <div id="customer-detail" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div style="font-size:20px;font-weight:700" id="cd-name">—</div>
+          <div style="font-size:13px;color:var(--text-muted)" id="cd-contact">—</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">LOYALTY BALANCE</div>
+          <div class="points-badge">⭐ <span id="cd-points">0</span> pts</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px" id="cd-ghs-value">= GHS 0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Redeem -->
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:14px">Redeem Points</div>
+        <div class="form-group">
+          <label>Points to Redeem</label>
+          <input id="redeem-pts" type="number" class="form-control" min="1" placeholder="e.g. 100"/>
+        </div>
+        <div id="redeem-preview" style="font-size:12px;color:var(--text-muted);margin-bottom:12px"></div>
+        <button class="btn btn-success w-full" id="redeem-btn">Redeem →</button>
+      </div>
+
+      <!-- Adjust -->
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:14px">Manual Adjustment</div>
+        <div class="form-group">
+          <label>Points (use negative to deduct)</label>
+          <input id="adjust-pts" type="number" class="form-control" placeholder="e.g. +50 or -20"/>
+        </div>
+        <div class="form-group">
+          <label>Reason</label>
+          <input id="adjust-note" class="form-control" placeholder="e.g. Welcome bonus"/>
+        </div>
+        <button class="btn btn-ghost w-full" id="adjust-btn">Apply</button>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="card">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:14px">Points History</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Type</th><th>Points</th><th>Balance</th><th>Note</th></tr></thead>
+          <tbody id="log-table"><tr><td colspan="5" class="text-muted text-center">—</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="no-selection" style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px">
+    ← Select a customer to manage their loyalty points
+  </div>
+</div>
+
+<script>
+let customers = [], selectedCustomer = null, redeemRate = 100;
+
+async function load() {
+  try {
+    [customers] = await Promise.all([api.get('/customers')]);
+    // Get loyalty config
+    const settings = await api.get('/settings');
+    redeemRate = parseFloat(settings.loyalty_redeem || 100);
+    renderList(customers);
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function renderList(list) {
+  const el = document.getElementById('customer-list');
+  if (!list.length) { el.innerHTML = '<div class="text-muted text-center" style="padding:24px">No customers found</div>'; return; }
+  el.innerHTML = list.map(c => `
+    <div class="customer-card ${selectedCustomer?.id===c.id?'selected':''}" onclick="selectCustomer(${c.id})">
+      <div>
+        <div class="c-name">${c.name}</div>
+        <div class="c-phone">${c.phone||c.email||'—'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:var(--mono);font-weight:700;color:var(--warning)">⭐ ${c.loyalty_points||0}</div>
+        <div style="font-size:11px;color:var(--text-muted)">pts</div>
+      </div>
+    </div>`).join('');
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  renderList(customers.filter(c => c.name.toLowerCase().includes(q)||(c.phone||'').includes(q)));
+});
+
+async function selectCustomer(id) {
+  selectedCustomer = customers.find(c=>c.id===id);
+  renderList(customers); // re-render to show selection
+  document.getElementById('customer-detail').style.display = '';
+  document.getElementById('no-selection').style.display = 'none';
+  document.getElementById('cd-name').textContent    = selectedCustomer.name;
+  document.getElementById('cd-contact').textContent = [selectedCustomer.phone, selectedCustomer.email].filter(Boolean).join(' · ') || 'No contact info';
+  updatePointsDisplay(selectedCustomer.loyalty_points||0);
+  await loadLog(id);
+}
+
+function updatePointsDisplay(pts) {
+  document.getElementById('cd-points').textContent   = pts;
+  document.getElementById('cd-ghs-value').textContent = `= GHS ${(pts/redeemRate).toFixed(2)}`;
+  if (selectedCustomer) selectedCustomer.loyalty_points = pts;
+  // Also update in main list
+  const c = customers.find(x=>x.id===selectedCustomer?.id);
+  if (c) c.loyalty_points = pts;
+}
+
+async function loadLog(customerId) {
+  try {
+    const log = await api.get(`/loyalty/log/${customerId}`);
+    const tbody = document.getElementById('log-table');
+    if (!log.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No activity yet</td></tr>'; return; }
+    tbody.innerHTML = log.map(l => {
+      const cls = `log-${l.change_type}`;
+      const sign = l.points > 0 ? '+' : '';
+      return `<tr>
+        <td class="text-muted">${fmt.datetime(l.created_at)}</td>
+        <td><span class="badge ${l.change_type==='earn'?'badge-success':l.change_type==='redeem'?'badge-danger':'badge-warning'}">${l.change_type}</span></td>
+        <td class="${cls}" style="font-family:var(--mono);font-weight:700">${sign}${l.points}</td>
+        <td style="font-family:var(--mono)">${l.balance_after}</td>
+        <td class="text-muted">${l.note||l.sale_reference||'—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {}
+}
+
+// Live redeem preview
+document.getElementById('redeem-pts').addEventListener('input', () => {
+  const pts = parseInt(document.getElementById('redeem-pts').value)||0;
+  const ghs = (pts/redeemRate).toFixed(2);
+  document.getElementById('redeem-preview').textContent = pts > 0 ? `= GHS ${ghs} discount` : '';
+});
+
+document.getElementById('redeem-btn').addEventListener('click', async () => {
+  if (!selectedCustomer) return;
+  const pts = parseInt(document.getElementById('redeem-pts').value);
+  if (!pts || pts <= 0) { toast('Enter points to redeem','warning'); return; }
+  try {
+    const result = await api.post('/loyalty/validate-redeem', { customer_id: selectedCustomer.id, points_to_redeem: pts });
+    if (!confirm(`Redeem ${pts} points for GHS ${result.ghs_value} discount?`)) return;
+    await api.post('/loyalty/adjust', {
+      customer_id: selectedCustomer.id, points: -pts,
+      note: `Manual redemption — GHS ${result.ghs_value} discount`
+    });
+    toast(`Redeemed ${pts} pts = GHS ${result.ghs_value}`, 'success');
+    document.getElementById('redeem-pts').value='';
+    // Refresh balance
+    customers = await api.get('/customers');
+    const updated = customers.find(c=>c.id===selectedCustomer.id);
+    updatePointsDisplay(updated?.loyalty_points||0);
+    loadLog(selectedCustomer.id);
+    renderList(customers);
+  } catch(e) { toast(e.message,'error'); }
+});
+
+document.getElementById('adjust-btn').addEventListener('click', async () => {
+  if (!selectedCustomer) return;
+  const pts  = parseInt(document.getElementById('adjust-pts').value);
+  const note = document.getElementById('adjust-note').value.trim();
+  if (isNaN(pts) || pts === 0) { toast('Enter a non-zero point value','warning'); return; }
+  try {
+    const result = await api.post('/loyalty/adjust', { customer_id: selectedCustomer.id, points: pts, note });
+    toast(`Points adjusted! New balance: ${result.new_balance}`, 'success');
+    document.getElementById('adjust-pts').value  = '';
+    document.getElementById('adjust-note').value = '';
+    customers = await api.get('/customers');
+    const updated = customers.find(c=>c.id===selectedCustomer.id);
+    updatePointsDisplay(updated?.loyalty_points||0);
+    loadLog(selectedCustomer.id);
+    renderList(customers);
+  } catch(e) { toast(e.message,'error'); }
+});
+
+load();
+</script>
+</body>
+</html>

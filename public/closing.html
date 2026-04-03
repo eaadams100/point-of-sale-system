@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Closing Report — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    /* Screen layout */
+    .report-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .span-2 { grid-column: span 2; }
+
+    .section-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.7px; color: var(--text-muted); margin-bottom: 14px;
+    }
+
+    .summary-row {
+      display: flex; justify-content: space-between;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .summary-row:last-child { border-bottom: none; }
+    .summary-row.total {
+      font-size: 16px; font-weight: 700; font-family: var(--mono);
+      padding-top: 12px; margin-top: 4px; border-top: 2px solid var(--border);
+      border-bottom: none;
+    }
+    .summary-row .val { font-family: var(--mono); }
+    .summary-row .val.green { color: var(--accent2); }
+    .summary-row .val.red   { color: var(--danger); }
+
+    .cashier-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 10px;
+    }
+    .cashier-card:last-child { margin-bottom: 0; }
+    .cashier-card .c-name { font-weight: 700; font-size: 14px; }
+    .cashier-card .c-stats { display: flex; gap: 20px; margin-top: 6px; }
+    .cashier-card .c-stat .lbl { font-size: 11px; color: var(--text-muted); }
+    .cashier-card .c-stat .val { font-family: var(--mono); font-weight: 600; font-size: 13px; }
+
+    .status-indicator {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 600;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+
+    /* ── Print styles ────────────────────── */
+    @media print {
+      body { background: white; color: #111; }
+      .no-print { display: none !important; }
+      .app-shell { display: block; }
+      header.topbar, aside.sidebar { display: none !important; }
+      #main-content { padding: 0 !important; margin: 0 !important; }
+      .report-grid { grid-template-columns: 1fr 1fr; gap: 16px; }
+      .card {
+        background: white; border: 1px solid #ccc;
+        break-inside: avoid; page-break-inside: avoid;
+      }
+      .stat-row { break-inside: avoid; }
+      canvas { max-width: 100%; }
+      .print-header {
+        display: block !important;
+        text-align: center; margin-bottom: 24px;
+        font-family: 'Courier New', monospace;
+      }
+    }
+
+    .print-header { display: none; }
+    .print-header h2 { font-size: 18px; }
+    .print-header p  { font-size: 12px; color: #555; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); requireRole('admin','manager'); injectShell('closing');</script>
+
+<!-- Print-only header -->
+<div class="print-header">
+  <h2>END-OF-DAY CLOSING REPORT</h2>
+  <p id="print-store">My Store</p>
+  <p id="print-date">—</p>
+  <hr style="margin:12px 0;border-color:#ccc"/>
+</div>
+
+<div class="page-header no-print">
+  <div>
+    <h1>Closing Report</h1>
+    <p>End-of-day summary for <strong id="report-date-label">—</strong></p>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <input type="date" id="report-date" class="form-control" style="width:160px"/>
+    <button class="btn btn-ghost" id="load-btn">Load</button>
+    <button class="btn btn-primary" onclick="window.print()">🖨 Print Report</button>
+  </div>
+</div>
+
+<!-- KPI strip -->
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:20px" id="kpi-strip">
+  <div class="stat-card"><div class="label">Gross Revenue</div><div class="value success" id="k-revenue">—</div></div>
+  <div class="stat-card"><div class="label">Transactions</div><div class="value accent"  id="k-txns">—</div></div>
+  <div class="stat-card"><div class="label">Avg Sale</div><div class="value"             id="k-avg">—</div></div>
+  <div class="stat-card"><div class="label">Discounts</div><div class="value warning"    id="k-disc">—</div></div>
+  <div class="stat-card"><div class="label">Voided</div><div class="value danger"        id="k-void">—</div></div>
+</div>
+
+<div class="report-grid">
+
+  <!-- Payment breakdown -->
+  <div class="card">
+    <div class="section-label">Payment Breakdown</div>
+    <div id="payment-breakdown">
+      <div class="text-muted text-center" style="padding:20px">Loading…</div>
+    </div>
+    <div style="margin-top:20px;position:relative;height:160px">
+      <canvas id="payment-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- Hourly revenue -->
+  <div class="card">
+    <div class="section-label">Hourly Revenue</div>
+    <div style="position:relative;height:240px">
+      <canvas id="hourly-chart"></canvas>
+      <div id="hourly-empty" class="hidden" style="display:flex;align-items:center;justify-content:center;height:240px;color:var(--text-muted);font-size:13px">No sales recorded</div>
+    </div>
+  </div>
+
+  <!-- Top products -->
+  <div class="card">
+    <div class="section-label">Top Products Today</div>
+    <div id="top-products-list">
+      <div class="text-muted text-center" style="padding:20px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Cashier performance -->
+  <div class="card">
+    <div class="section-label">Cashier Performance</div>
+    <div id="cashier-list">
+      <div class="text-muted text-center" style="padding:20px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Full transaction list -->
+  <div class="card span-2">
+    <div class="section-label">All Transactions</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Reference</th><th>Cashier</th><th>Items</th><th>Method</th><th class="text-right">Total</th><th>Status</th></tr>
+        </thead>
+        <tbody id="txn-table">
+          <tr><td colspan="7" class="text-muted text-center">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="txn-footer" style="text-align:right;font-size:12px;color:var(--text-muted);padding-top:10px"></div>
+  </div>
+
+</div>
+
+<script>
+let paymentChart, hourlyChart;
+Chart.defaults.color = '#8b8fa8';
+Chart.defaults.font.family = "'DM Sans', sans-serif";
+Chart.defaults.font.size = 12;
+const C = { accent:'#6c63ff', accent2:'#00d4aa', warning:'#ffb547', danger:'#ff4f6d', muted:'#2e3148' };
+
+// Default to today
+const todayStr = new Date().toISOString().slice(0,10);
+document.getElementById('report-date').value = todayStr;
+document.getElementById('report-date-label').textContent = formatDateLabel(todayStr);
+document.getElementById('print-date').textContent = 'Date: ' + formatDateLabel(todayStr);
+
+function formatDateLabel(d) {
+  return new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+
+async function loadReport() {
+  const date = document.getElementById('report-date').value;
+  if (!date) { toast('Select a date', 'warning'); return; }
+  document.getElementById('report-date-label').textContent = formatDateLabel(date);
+  document.getElementById('print-date').textContent = 'Date: ' + formatDateLabel(date);
+
+  try {
+    const from = date + 'T00:00:00';
+    const to   = date + 'T23:59:59';
+    const [sales, topProducts] = await Promise.all([
+      api.get(`/sales?limit=500&from=${from}&to=${to}`),
+      api.get(`/reports/top-products?period=today&limit=8`),
+    ]);
+
+    const completed = sales.filter(s => s.payment_status === 'completed');
+    const voided    = sales.filter(s => s.payment_status === 'voided');
+    const revenue   = completed.reduce((s,r) => s + parseFloat(r.total_amount), 0);
+    const discounts = completed.reduce((s,r) => s + parseFloat(r.discount||0), 0);
+    const avg       = completed.length ? revenue / completed.length : 0;
+
+    // KPIs
+    document.getElementById('k-revenue').textContent = fmt.currency(revenue);
+    document.getElementById('k-txns').textContent    = completed.length;
+    document.getElementById('k-avg').textContent     = fmt.currency(avg);
+    document.getElementById('k-disc').textContent    = fmt.currency(discounts);
+    document.getElementById('k-void').textContent    = voided.length;
+
+    renderPaymentBreakdown(completed);
+    renderHourlyChart(completed);
+    renderTopProducts(topProducts);
+    renderCashierPerformance(completed);
+    renderTransactions(sales);
+
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function renderPaymentBreakdown(sales) {
+  const methods = {};
+  sales.forEach(s => {
+    methods[s.payment_method] = methods[s.payment_method] || { count:0, total:0 };
+    methods[s.payment_method].count++;
+    methods[s.payment_method].total += parseFloat(s.total_amount);
+  });
+  const total = Object.values(methods).reduce((s,m) => s + m.total, 0);
+  const labels = { cash:'Cash', mobile_money:'Mobile Money', card:'Card', split:'Split' };
+  const methodColors = { cash: C.accent2, mobile_money: C.accent, card: C.warning, split: C.danger };
+
+  const el = document.getElementById('payment-breakdown');
+  if (!Object.keys(methods).length) {
+    el.innerHTML = '<div class="text-muted text-center" style="padding:16px">No transactions</div>';
+  } else {
+    el.innerHTML = Object.entries(methods).map(([m, d]) => `
+      <div class="summary-row">
+        <span><span class="status-dot" style="background:${methodColors[m]||C.muted};display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px"></span>${labels[m]||m} <span class="text-muted">(${d.count})</span></span>
+        <span class="val green">${fmt.currency(d.total)}</span>
+      </div>`).join('') +
+      `<div class="summary-row total"><span>TOTAL</span><span class="val green">${fmt.currency(total)}</span></div>`;
+  }
+
+  // Doughnut
+  if (paymentChart) { try { paymentChart.destroy(); } catch(_){} }
+  if (!Object.keys(methods).length) return;
+  paymentChart = new Chart(document.getElementById('payment-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(methods).map(m => labels[m]||m),
+      datasets: [{ data: Object.values(methods).map(d => d.total), backgroundColor: Object.keys(methods).map(m => methodColors[m]||C.muted), borderWidth:2, borderColor:'#1a1d27', hoverOffset:4 }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'65%', plugins: { legend: { position:'bottom', labels:{ boxWidth:10, padding:10 } }, tooltip: { callbacks: { label: c => ` GHS ${parseFloat(c.raw).toFixed(2)}` } } } }
+  });
+}
+
+function renderHourlyChart(sales) {
+  if (hourlyChart) { try { hourlyChart.destroy(); } catch(_){} }
+  const byHour = {};
+  sales.forEach(s => {
+    const h = new Date(s.created_at).getHours();
+    byHour[h] = (byHour[h]||0) + parseFloat(s.total_amount);
+  });
+  const hours  = Array.from({length:24}, (_,i) => i);
+  const values = hours.map(h => byHour[h]||0);
+  const hasData = values.some(v => v > 0);
+
+  document.getElementById('hourly-empty').classList.toggle('hidden', hasData);
+  const canvas = document.getElementById('hourly-chart');
+  canvas.style.display = hasData ? '' : 'none';
+  if (!hasData) return;
+
+  // Find peak hour
+  const peak = hours.reduce((p, h) => byHour[h] > (byHour[p]||0) ? h : p, 0);
+  const bgColors = hours.map(h => h === peak ? C.accent2 : C.accent);
+
+  hourlyChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: hours.map(h => `${String(h).padStart(2,'0')}h`),
+      datasets: [{ data: values, backgroundColor: bgColors, borderRadius:3, borderSkipped:false }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: c => ` GHS ${parseFloat(c.raw).toFixed(2)}` } } },
+      scales: { x:{ grid:{ color:C.muted }, ticks:{ maxRotation:0, font:{ size:10 } } }, y:{ grid:{ color:C.muted }, beginAtZero:true, ticks:{ callback: v=>`GHS ${v}` } } }
+    }
+  });
+}
+
+function renderTopProducts(products) {
+  const el = document.getElementById('top-products-list');
+  if (!products.length) { el.innerHTML = '<div class="text-muted text-center" style="padding:16px">No product sales today</div>'; return; }
+  const maxUnits = Math.max(...products.map(p => parseInt(p.units_sold)), 1);
+  el.innerHTML = products.map((p, i) => {
+    const pct = (parseInt(p.units_sold) / maxUnits) * 100;
+    return `
+      <div class="summary-row" style="flex-direction:column;gap:4px;align-items:stretch">
+        <div style="display:flex;justify-content:space-between">
+          <span><span style="color:var(--text-muted);margin-right:6px">${i+1}.</span><strong>${p.product_name}</strong></span>
+          <span class="val" style="font-family:var(--mono)">${fmt.currency(p.revenue)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:4px;background:var(--border);border-radius:2px">
+            <div style="width:${pct}%;height:4px;background:var(--accent);border-radius:2px"></div>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">${p.units_sold} units</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderCashierPerformance(sales) {
+  const el = document.getElementById('cashier-list');
+  if (!sales.length) { el.innerHTML = '<div class="text-muted text-center" style="padding:16px">No transactions</div>'; return; }
+  const cashiers = {};
+  sales.forEach(s => {
+    const name = s.cashier_name || 'Unknown';
+    cashiers[name] = cashiers[name] || { count:0, total:0, discounts:0 };
+    cashiers[name].count++;
+    cashiers[name].total    += parseFloat(s.total_amount);
+    cashiers[name].discounts += parseFloat(s.discount||0);
+  });
+  el.innerHTML = Object.entries(cashiers)
+    .sort((a,b) => b[1].total - a[1].total)
+    .map(([name, d]) => `
+      <div class="cashier-card">
+        <div class="c-name">${name}</div>
+        <div class="c-stats">
+          <div class="c-stat"><div class="lbl">Transactions</div><div class="val">${d.count}</div></div>
+          <div class="c-stat"><div class="lbl">Revenue</div><div class="val" style="color:var(--accent2)">${fmt.currency(d.total)}</div></div>
+          <div class="c-stat"><div class="lbl">Avg Sale</div><div class="val">${fmt.currency(d.total/d.count)}</div></div>
+          ${d.discounts > 0 ? `<div class="c-stat"><div class="lbl">Discounts</div><div class="val" style="color:var(--warning)">${fmt.currency(d.discounts)}</div></div>` : ''}
+        </div>
+      </div>`).join('');
+}
+
+function renderTransactions(sales) {
+  const tbody = document.getElementById('txn-table');
+  const ml = { cash:'Cash', mobile_money:'Mobile', card:'Card', split:'Split' };
+  if (!sales.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center" style="padding:24px">No transactions on this date</td></tr>';
+    document.getElementById('txn-footer').textContent = '';
+    return;
+  }
+  tbody.innerHTML = sales.map(s => `
+    <tr style="${s.payment_status==='voided'?'opacity:0.45':''}">
+      <td class="text-muted">${new Date(s.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td class="text-mono" style="font-size:12px">${s.reference}</td>
+      <td>${s.cashier_name||'—'}</td>
+      <td class="text-muted" style="font-size:12px">—</td>
+      <td><span class="badge badge-info">${ml[s.payment_method]||s.payment_method}</span></td>
+      <td class="text-right text-mono">${fmt.currency(s.total_amount)}</td>
+      <td><span class="badge ${s.payment_status==='completed'?'badge-success':'badge-danger'}">${s.payment_status}</span></td>
+    </tr>`).join('');
+
+  const completed = sales.filter(s=>s.payment_status==='completed');
+  const total = completed.reduce((s,r)=>s+parseFloat(r.total_amount),0);
+  document.getElementById('txn-footer').textContent =
+    `${completed.length} completed transaction${completed.length!==1?'s':''} · Total: GHS ${total.toFixed(2)}`;
+}
+
+document.getElementById('load-btn').addEventListener('click', loadReport);
+document.getElementById('report-date').addEventListener('change', loadReport);
+
+loadReport();
+</script>
+</body>
+</html>
