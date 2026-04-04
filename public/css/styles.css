@@ -31,11 +31,13 @@ body {
   display: grid;
   grid-template-columns: 220px 1fr;
   grid-template-rows: 56px 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
   grid-column: 1 / -1;
+  grid-row: 1;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -73,11 +75,15 @@ body {
 }
 
 .sidebar {
+  grid-column: 1;
+  grid-row: 2;
   background: var(--surface);
   border-right: 1px solid var(--border);
   padding: 16px 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .sidebar nav a {
@@ -103,8 +109,12 @@ body {
 .sidebar nav a .icon { font-size: 16px; width: 20px; text-align: center; }
 
 .main-content {
+  grid-column: 2;
+  grid-row: 2;
   padding: 28px;
   overflow-y: auto;
+  min-height: 0;
+  width: 100%;
 }
 
 /* ── Cards ───────────────────────────────────── */
@@ -343,3 +353,315 @@ tr:last-child td { border-bottom: none; }
 .gap-3 { gap: 12px; }
 .hidden { display: none !important; }
 .w-full { width: 100%; }
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE / MOBILE LAYOUT
+   Breakpoints:
+     tablet  — max-width: 1024px
+     mobile  — max-width: 768px
+     small   — max-width: 480px
+   ═══════════════════════════════════════════════ */
+
+/* ── Hamburger button (hidden on desktop) ────── */
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+  margin-right: 4px;
+}
+
+/* ── Sidebar overlay (mobile backdrop) ────────── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;   /* always fixed — never a grid participant */
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 199;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.sidebar-overlay.visible {
+  display: block;
+  pointer-events: auto;
+}
+
+/* ════════════════════════════════════════════════
+   TABLET  (≤ 1024px)
+   ════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .app-shell {
+    grid-template-columns: 200px 1fr;
+    height: 100vh;
+  }
+
+  .main-content { padding: 20px; }
+
+  /* Shrink stat font on tablet */
+  .stat-card .value { font-size: 20px; }
+
+  /* Dashboard 3-col → 2-col */
+  .dashboard-grid { grid-template-columns: 1fr 1fr !important; }
+  .dashboard-grid .span-3 { grid-column: span 2 !important; }
+}
+
+/* ════════════════════════════════════════════════
+   MOBILE  (≤ 768px)
+   ════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Shell: hide sidebar, show hamburger ──── */
+  .menu-toggle { display: flex; align-items: center; justify-content: center; }
+
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 260px;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    padding-top: 70px;   /* clear the topbar height */
+  }
+
+  .sidebar.open { transform: translateX(0); }
+
+  /* Keep topbar spanning full width */
+  .topbar { grid-column: 1 / -1; padding: 0 16px; }
+  .topbar .logo { font-size: 14px; }
+  /* Hide username on very small topbar, keep role tag */
+  .topbar .user-badge span:first-child { display: none; }
+
+  /* Scanner indicator hidden on mobile (keyboard scanners not used) */
+  .scanner-indicator { display: none; }
+
+  /* ── Main content full width ──────────────── */
+  .main-content {
+    grid-column: 1;
+    grid-row: 2;
+    padding: 16px;
+  }
+
+  /* ── Page header stacks ───────────────────── */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .page-header > div:last-child,
+  .page-header > button,
+  .page-header > a {
+    width: 100%;
+  }
+  .page-header > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ── Stat cards: 2-col grid ───────────────── */
+  .stat-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-row  { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+  .stat-card { padding: 14px 16px; }
+  .stat-card .value { font-size: 18px; }
+
+  /* ── Dashboard: single column ─────────────── */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .dashboard-grid .span-2,
+  .dashboard-grid .span-3 {
+    grid-column: span 1 !important;
+  }
+
+  /* ── Cards ────────────────────────────────── */
+  .card { padding: 14px; }
+
+  /* ── Two-column grids collapse ─────────────── */
+  .two-col,
+  .report-grid,
+  .settings-grid,
+  .info-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .report-grid .span-2,
+  .settings-grid .span-2 {
+    grid-column: span 1 !important;
+  }
+
+  /* ── Modal: full-width bottom sheet on mobile */
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    border-radius: 18px 18px 0 0;
+    max-height: 92vh;
+    padding: 20px 18px;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* ── Tables: horizontal scroll ─────────────── */
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+
+  /* ── Forms: single column grids ─────────────── */
+  .modal [style*="grid-template-columns: 1fr 1fr"],
+  div[style*="grid-template-columns:1fr 1fr"] {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  /* ── Buttons: full-width where stacked ──────── */
+  .page-header .btn { flex: 1; justify-content: center; }
+
+  /* ── Period tabs wrap ────────────────────────── */
+  .period-tabs, .po-tabs { flex-wrap: wrap; }
+
+  /* ── Filters bar stacks ──────────────────────── */
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  .filters-bar .form-group,
+  .filters-bar input,
+  .filters-bar select,
+  .filters-bar button { width: 100% !important; max-width: 100% !important; }
+
+  /* ── Toast: full-width bottom ────────────────── */
+  #toast-container {
+    bottom: 16px; right: 16px; left: 16px;
+  }
+  .toast { min-width: unset; width: 100%; }
+
+  /* ── Sales history: hide detail panel on mobile,
+        show as modal instead ────────────────────── */
+  .detail-panel {
+    width: 100% !important;
+    top: 0 !important;
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-top: 1px solid var(--border) !important;
+  }
+  .content-shifted { margin-right: 0 !important; }
+
+  /* ── Closing report KPI strip: 2-col ─────────── */
+  #kpi-strip { grid-template-columns: 1fr 1fr !important; }
+}
+
+/* ════════════════════════════════════════════════
+   POS SCREEN — special mobile layout
+   The POS splits into tabbed view on mobile:
+   Tab 1: Products grid
+   Tab 2: Cart
+   ════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .pos-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr !important;
+    height: calc(100vh - 56px);
+    position: relative;
+  }
+
+  /* Tab bar */
+  .pos-tab-bar {
+    display: flex !important;
+  }
+
+  /* On mobile, left and right panels are stacked;
+     JS toggles .pos-show-cart to switch between them */
+  .pos-left {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .cart-right {
+    display: none;
+    position: fixed;
+    inset: 56px 0 0 0;
+    z-index: 50;
+    background: var(--bg);
+    flex-direction: column;
+  }
+
+  .pos-layout.pos-show-cart .cart-right { display: flex; }
+  .pos-layout.pos-show-cart .pos-left   { display: none; }
+
+  /* Product grid smaller tiles on mobile */
+  .product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important;
+    padding: 10px !important;
+    gap: 8px !important;
+  }
+  .product-tile { padding: 10px 6px; }
+  .product-tile .p-name  { font-size: 11px; }
+  .product-tile .p-price { font-size: 12px; }
+}
+
+/* ── POS tab bar (only shown on mobile) ──────── */
+.pos-tab-bar {
+  display: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  gap: 0;
+}
+.pos-tab-btn {
+  flex: 1;
+  padding: 12px 8px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.pos-tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.pos-tab-btn .cart-count {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 10px;
+  padding: 1px 6px;
+  font-weight: 700;
+}
+
+/* ════════════════════════════════════════════════
+   SMALL PHONES  (≤ 480px)
+   ════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .stat-card .value { font-size: 16px; }
+  .stat-card .label { font-size: 10px; }
+
+  /* Modals take full screen on tiny phones */
+  .modal {
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .btn-lg { padding: 10px 18px; font-size: 14px; }
+
+  /* Checkout button always full width */
+  .cart-actions { padding: 12px; }
+  .cart-actions .btn { font-size: 14px; }
+
+  /* Users page avatar smaller */
+  .avatar { width: 28px; height: 28px; font-size: 10px; }
+}

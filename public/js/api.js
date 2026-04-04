@@ -65,10 +65,22 @@ function toast(msg, type = 'info') {
 
 // ── Format helpers ────────────────────────────
 const fmt = {
-  currency: (n) => `GHS ${parseFloat(n || 0).toFixed(2)}`,
+  currency: (n) => {
+    const symbol = window._posSettings?.store_currency || 'GHS';
+    return `${symbol} ${parseFloat(n || 0).toFixed(2)}`;
+  },
   date:     (d) => new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }),
   datetime: (d) => new Date(d).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }),
 };
+
+// Load settings into window._posSettings once on page load (best-effort)
+(async () => {
+  try {
+    if (Auth.isLoggedIn()) {
+      window._posSettings = await api.get('/settings');
+    }
+  } catch(_) {}
+})();
 
 // ── Guard: redirect to login if not authenticated ──
 function requireAuth() {

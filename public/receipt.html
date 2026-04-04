@@ -94,25 +94,31 @@ async function loadReceipt() {
   }
 
   try {
-    const sale = await api.get(`/sales/${saleId}`);
-    renderReceipt(sale);
+    const [sale, settings] = await Promise.all([
+      api.get(`/sales/${saleId}`),
+      api.get('/settings').catch(() => ({})),
+    ]);
+    renderReceipt(sale, settings);
   } catch(e) {
     document.getElementById('receipt-body').innerHTML = `<div style="text-align:center;padding:20px;color:#c00">Error: ${e.message}</div>`;
   }
 }
 
-function renderReceipt(sale) {
-  const storeName    = 'My Store';
-  const storeAddress = '123 Main Street, Accra';
-  const storePhone   = '+233 XX XXX XXXX';
+function renderReceipt(sale, settings = {}) {
+  const storeName    = settings.store_name    || 'My Store';
+  const storeAddress = settings.store_address || '';
+  const storePhone   = settings.store_phone   || '';
+  const currency     = settings.store_currency || 'GHS';
+  const footer       = settings.receipt_footer || 'Thank you for your purchase!';
 
   const methodLabel = { cash:'Cash', mobile_money:'Mobile Money', card:'Card/POS', split:'Split Payment' };
+  const c = (n) => `${currency} ${parseFloat(n||0).toFixed(2)}`;
   const items = (sale.items||[]).map(i => `
     <div class="r-item r-item-name">
       <span>${i.product_name}</span>
-      <span>GHS ${parseFloat(i.total_price).toFixed(2)}</span>
+      <span>${c(i.total_price)}</span>
     </div>
-    <div class="r-item-sub">${i.quantity} × GHS ${parseFloat(i.unit_price).toFixed(2)}${parseFloat(i.discount||0)>0 ? ` (disc: -GHS ${parseFloat(i.discount).toFixed(2)})` : ''}</div>
+    <div class="r-item-sub">${i.quantity} × ${c(i.unit_price)}${parseFloat(i.discount||0)>0 ? ` (disc: -${c(i.discount)})` : ''}</div>
   `).join('');
 
   const disc = parseFloat(sale.discount||0);
@@ -123,31 +129,23 @@ function renderReceipt(sale) {
     <div class="r-address">${storeAddress}</div>
     <div class="r-address">${storePhone}</div>
     <hr class="r-divider"/>
-
     <div class="r-row"><span class="r-label">Date</span><span>${new Date(sale.created_at).toLocaleString('en-GB')}</span></div>
     <div class="r-row"><span class="r-label">Receipt #</span><span>${sale.reference}</span></div>
     <div class="r-row"><span class="r-label">Cashier</span><span>${sale.cashier_name||'—'}</span></div>
     ${sale.customer_name ? `<div class="r-row"><span class="r-label">Customer</span><span>${sale.customer_name}</span></div>` : ''}
-
     <hr class="r-divider"/>
-
     <div class="r-items">${items}</div>
-
     <hr class="r-divider"/>
-
     <div class="r-totals">
-      <div class="r-row"><span class="r-label">Subtotal</span><span>GHS ${parseFloat(sale.subtotal).toFixed(2)}</span></div>
-      ${disc > 0 ? `<div class="r-row"><span class="r-label">Discount</span><span>- GHS ${disc.toFixed(2)}</span></div>` : ''}
-      ${tax  > 0 ? `<div class="r-row"><span class="r-label">Tax</span><span>GHS ${tax.toFixed(2)}</span></div>` : ''}
-      <div class="r-row r-grand"><span>TOTAL</span><span>GHS ${parseFloat(sale.total_amount).toFixed(2)}</span></div>
+      <div class="r-row"><span class="r-label">Subtotal</span><span>${c(sale.subtotal)}</span></div>
+      ${disc > 0 ? `<div class="r-row"><span class="r-label">Discount</span><span>- ${c(disc)}</span></div>` : ''}
+      ${tax  > 0 ? `<div class="r-row"><span class="r-label">Tax</span><span>${c(tax)}</span></div>` : ''}
+      <div class="r-row r-grand"><span>TOTAL</span><span>${c(sale.total_amount)}</span></div>
     </div>
-
     <hr class="r-divider"/>
     <div class="r-row"><span class="r-label">Payment</span><span>${methodLabel[sale.payment_method]||sale.payment_method}</span></div>
     ${sale.payment_status === 'voided' ? '<div style="text-align:center;color:#c00;font-weight:700;margin-top:8px">*** VOIDED ***</div>' : ''}
-
-    <div class="r-footer">Thank you for your purchase!</div>
-    <div class="r-footer">Please keep this receipt.</div>
+    <div class="r-footer">${footer}</div>
     <div class="r-barcode">${sale.reference}</div>
   `;
 
