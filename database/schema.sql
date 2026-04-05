@@ -204,3 +204,20 @@ INSERT INTO settings (key, value) VALUES
   ('loyalty_redeem',   '100'),   -- points needed to redeem 1 GHS
   ('low_stock_alert',  'true')
 ON CONFLICT (key) DO NOTHING;
+
+-- Add to your database/schema.sql or run separately
+CREATE TABLE IF NOT EXISTS paystack_transactions (
+  id SERIAL PRIMARY KEY,
+  sale_id INTEGER REFERENCES sales(id) ON DELETE SET NULL,
+  reference VARCHAR(100) UNIQUE NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  channel VARCHAR(50),
+  phone VARCHAR(20),
+  status VARCHAR(50) DEFAULT 'pending',
+  gateway_resp JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_paystack_ref ON paystack_transactions(reference);
+CREATE INDEX IF NOT EXISTS idx_paystack_sale ON paystack_transactions(sale_id);

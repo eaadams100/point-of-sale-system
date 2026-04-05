@@ -108,7 +108,8 @@ function initTopbar() {
   if (roleEl) roleEl.textContent = user.role;
 
   const logoutBtn = document.getElementById('logout-btn');
-  if (logoutBtn) logoutBtn.addEventListener('click', () => {
+  if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+    try { await api.post('/auth/logout', {}); } catch(_) {}
     Auth.clear();
     window.location.href = '/index.html';
   });

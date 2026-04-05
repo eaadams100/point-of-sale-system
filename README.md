@@ -82,4 +82,40 @@ Open **http://localhost:3000**
 - **Admin** — Full access
 - **Manager** — All except user management
 - **Cashier** — POS screen and product browsing only
-# point-of-sale-system
+
+
+## Paystack Mobile Money Setup
+
+1. Create a Paystack account at https://dashboard.paystack.com
+2. Go to Settings → API Keys & Webhooks
+3. Copy your Test Secret Key
+4. In your POS system, go to Settings → Paystack and:
+   - Enable Paystack Payments
+   - Paste your Secret Key
+   - Paste your Public Key
+5. Add your webhook URL in Paystack dashboard:
+   `https://your-domain.com/api/paystack/webhook`
+6. For local testing, use a tool like ngrok:
+   ```bash
+   ngrok http 3000
+
+
+
+### 8. **Test Mode Suggestion**
+
+Add a test mode to your paystackController:
+
+```javascript
+// At the top of paystackController.js
+const USE_TEST_MODE = process.env.NODE_ENV !== 'production';
+
+// In initiateMobileMoney, you can add:
+if (USE_TEST_MODE && phone === '0240000000') {
+  // Simulate successful payment for testing
+  return res.json({
+    reference: 'TEST-REF-123',
+    status: 'success',
+    display_text: 'TEST MODE: Payment successful!',
+    requires_approval: false
+  });
+}

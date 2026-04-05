@@ -10,7 +10,7 @@
     .settings-section { margin-bottom: 28px; }
     .settings-section h3 {
       font-size: 13px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.6px; color: var(--text-muted);
+      letter-spacing: 0.6px; color:var(--text-muted);
       margin-bottom: 16px; padding-bottom: 8px;
       border-bottom: 1px solid var(--border);
     }
@@ -20,7 +20,7 @@
     }
     .toggle-row:last-child { border-bottom: none; }
     .toggle-row .t-label { font-size: 13px; font-weight: 500; }
-    .toggle-row .t-desc  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .toggle-row .t-desc  { font-size: 11px; color:var(--text-muted); margin-top: 2px; }
     .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
     .toggle input { opacity: 0; width: 0; height: 0; }
     .toggle-slider {
@@ -46,7 +46,7 @@
 
     .saved-toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-      background: var(--accent2); color: #0f1117; padding: 10px 24px;
+      background: var(--accent2); color: var(--bg); padding: 10px 24px;
       border-radius: 8px; font-weight: 700; font-size: 13px;
       opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999;
     }
@@ -57,7 +57,7 @@
 <script src="/js/api.js"></script>
 <script src="/js/shell.js"></script>
 <script>requireAuth(); requireRole('admin'); injectShell('settings');</script>
-
+<div id="page-wrap">
 <div class="page-header">
   <div><h1>System Settings</h1><p>Store configuration and preferences</p></div>
   <button class="btn btn-primary" id="save-all-btn">Save All Changes</button>
@@ -153,6 +153,37 @@
         </div>
       </div>
     </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="settings-section" style="margin-bottom:0">
+        <h3>📱 Paystack — Ghana Mobile Money</h3>
+        <div class="text-muted" style="font-size:12px;margin-bottom:14px">
+          Get your API keys from <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" style="color:var(--accent)">Paystack Dashboard</a>. Use test keys while testing.
+        </div>
+        <div class="toggle-row" style="margin-bottom:14px">
+          <div>
+            <div class="t-label">Enable Paystack Payments</div>
+            <div class="t-desc">Enables MTN, Vodafone, AirtelTigo at checkout</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="s-paystack_enabled"/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Secret Key (sk_live_... or sk_test_...)</label>
+          <input id="s-paystack_secret_key" class="form-control" type="password" placeholder="sk_test_…"/>
+        </div>
+        <div class="form-group">
+          <label>Public Key (pk_live_... or pk_test_...)</label>
+          <input id="s-paystack_public_key" class="form-control" placeholder="pk_test_…"/>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);padding:10px 12px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+          <strong>Webhook URL</strong> — add this in your Paystack dashboard under Settings → API Keys & Webhooks:<br/>
+          <code style="font-family:var(--mono);color:var(--accent)" id="webhook-url">https://yourdomain.com/api/paystack/webhook</code>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -172,13 +203,24 @@ async function loadSettings() {
 function populate(s) {
   // Text inputs
   ['store_name','store_address','store_phone','store_email','store_currency',
-   'receipt_footer','tax_rate','loyalty_rate','loyalty_redeem'].forEach(key => {
+   'receipt_footer','tax_rate','loyalty_rate','loyalty_redeem',
+   'paystack_public_key'].forEach(key => {
     const el = document.getElementById(`s-${key}`);
     if (el) el.value = s[key] || '';
   });
+  // Secret key — only fill if already set (don't expose it fully)
+  const skEl = document.getElementById('s-paystack_secret_key');
+  if (skEl) skEl.placeholder = s.paystack_secret_key ? '••••••••••••••••••••• (saved)' : 'sk_test_…';
+
   // Checkboxes
-  document.getElementById('s-loyalty_enabled').checked  = s.loyalty_enabled === 'true';
-  document.getElementById('s-low_stock_alert').checked  = s.low_stock_alert !== 'false';
+  document.getElementById('s-loyalty_enabled').checked  = s.loyalty_enabled  === 'true';
+  document.getElementById('s-low_stock_alert').checked  = s.low_stock_alert  !== 'false';
+  document.getElementById('s-paystack_enabled').checked = s.paystack_enabled === 'true';
+
+  // Webhook URL — show actual server origin
+  const webhookEl = document.getElementById('webhook-url');
+  if (webhookEl) webhookEl.textContent = `${window.location.origin}/api/paystack/webhook`;
+
   // Preview & example
   updatePreview();
   updateLoyaltyExample();
@@ -205,18 +247,23 @@ function updateLoyaltyExample() {
   document.getElementById(id)?.addEventListener('input', updateLoyaltyExample));
 
 document.getElementById('save-all-btn').addEventListener('click', async () => {
+  const skVal = document.getElementById('s-paystack_secret_key').value.trim();
   const body = {
-    store_name:      document.getElementById('s-store_name').value.trim(),
-    store_address:   document.getElementById('s-store_address').value.trim(),
-    store_phone:     document.getElementById('s-store_phone').value.trim(),
-    store_email:     document.getElementById('s-store_email').value.trim(),
-    store_currency:  document.getElementById('s-store_currency').value.trim() || 'GHS',
-    receipt_footer:  document.getElementById('s-receipt_footer').value.trim(),
-    tax_rate:        document.getElementById('s-tax_rate').value || '0',
-    loyalty_enabled: document.getElementById('s-loyalty_enabled').checked ? 'true' : 'false',
-    loyalty_rate:    document.getElementById('s-loyalty_rate').value || '1',
-    loyalty_redeem:  document.getElementById('s-loyalty_redeem').value || '100',
-    low_stock_alert: document.getElementById('s-low_stock_alert').checked ? 'true' : 'false',
+    store_name:         document.getElementById('s-store_name').value.trim(),
+    store_address:      document.getElementById('s-store_address').value.trim(),
+    store_phone:        document.getElementById('s-store_phone').value.trim(),
+    store_email:        document.getElementById('s-store_email').value.trim(),
+    store_currency:     document.getElementById('s-store_currency').value.trim() || 'GHS',
+    receipt_footer:     document.getElementById('s-receipt_footer').value.trim(),
+    tax_rate:           document.getElementById('s-tax_rate').value || '0',
+    loyalty_enabled:    document.getElementById('s-loyalty_enabled').checked ? 'true' : 'false',
+    loyalty_rate:       document.getElementById('s-loyalty_rate').value || '1',
+    loyalty_redeem:     document.getElementById('s-loyalty_redeem').value || '100',
+    low_stock_alert:    document.getElementById('s-low_stock_alert').checked ? 'true' : 'false',
+    paystack_enabled:   document.getElementById('s-paystack_enabled').checked ? 'true' : 'false',
+    paystack_public_key: document.getElementById('s-paystack_public_key').value.trim(),
+    // Only update secret key if a new value was actually typed
+    ...(skVal && !skVal.startsWith('•') ? { paystack_secret_key: skVal } : {}),
   };
   try {
     await api.put('/settings', body);
@@ -228,5 +275,6 @@ document.getElementById('save-all-btn').addEventListener('click', async () => {
 
 loadSettings();
 </script>
+</div>
 </body>
 </html>

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Expenses — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    .category-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; background: var(--surface2);
+      border: 1px solid var(--border); color: var(--text-muted);
+    }
+    .expense-total { font-family: var(--mono); color: var(--danger); font-weight: 700; }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); injectShell('expenses');</script>
+
+<div class="page-header">
+  <div><h1>Expenses</h1><p>Track business costs and outgoings</p></div>
+  <button class="btn btn-primary" id="add-btn">+ Record Expense</button>
+</div>
+
+<!-- Summary stats -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px">
+  <div class="stat-card"><div class="label">This Month</div><div class="value danger" id="s-month">—</div></div>
+  <div class="stat-card"><div class="label">This Week</div><div class="value warning" id="s-week">—</div></div>
+  <div class="stat-card"><div class="label">Today</div><div class="value" id="s-today">—</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 300px;gap:20px">
+  <div>
+    <!-- Filters -->
+    <div class="filters-bar" style="margin-bottom:16px">
+      <div class="form-group"><label>From</label><input id="f-from" type="date" class="form-control"/></div>
+      <div class="form-group"><label>To</label><input id="f-to" type="date" class="form-control"/></div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="f-category" class="form-control" style="width:150px">
+          <option value="">All</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="filter-btn">Filter</button>
+      <button class="btn btn-ghost"   id="clear-btn">Clear</button>
+      <button class="btn btn-ghost"   id="export-btn">↓ CSV</button>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Method</th><th class="text-right">Amount</th><th>By</th><th></th></tr></thead>
+          <tbody id="expenses-table"><tr><td colspan="7" class="text-muted text-center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div id="table-footer" style="text-align:right;font-size:12px;color:var(--text-muted);padding-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- By category chart -->
+  <div class="card">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);margin-bottom:14px">By Category</div>
+    <div style="position:relative;height:220px"><canvas id="cat-chart"></canvas></div>
+    <div id="cat-list" style="margin-top:16px"></div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay hidden" id="expense-modal">
+  <div class="modal">
+    <h2 id="modal-title">Record Expense</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+      <div class="form-group">
+        <label>Date *</label>
+        <input id="f-date" type="date" class="form-control"/>
+      </div>
+      <div class="form-group">
+        <label>Amount (GHS) *</label>
+        <input id="f-amount" type="number" class="form-control" min="0.01" step="0.01"/>
+      </div>
+      <div class="form-group">
+        <label>Category *</label>
+        <select id="f-cat" class="form-control"></select>
+      </div>
+      <div class="form-group">
+        <label>Payment Method</label>
+        <select id="f-method" class="form-control">
+          <option value="cash">Cash</option>
+          <option value="mobile_money">Mobile Money</option>
+          <option value="card">Card</option>
+          <option value="bank_transfer">Bank Transfer</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Description *</label>
+        <input id="f-desc" class="form-control" placeholder="e.g. Electricity bill for March"/>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Reference / Receipt No.</label>
+        <input id="f-ref" class="form-control" placeholder="Optional"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-primary w-full" id="save-btn">Save</button>
+      <button class="btn btn-ghost" id="cancel-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let expenses = [], categories = [], editingId = null;
+let catChart;
+
+const today = new Date().toISOString().slice(0,10);
+const monthStart = today.slice(0,8) + '01';
+document.getElementById('f-from').value = monthStart;
+document.getElementById('f-to').value   = today;
+document.getElementById('f-date').value = today;
+
+async function load() {
+  try {
+    categories = await api.get('/expenses/categories');
+    populateCategorySelects();
+    await loadExpenses();
+    await loadStats();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function populateCategorySelects() {
+  const opts = categories.map(c=>`<option value="${c}">${c}</option>`).join('');
+  document.getElementById('f-category').innerHTML = '<option value="">All</option>' + opts;
+  document.getElementById('f-cat').innerHTML = opts;
+}
+
+async function loadExpenses() {
+  const from     = document.getElementById('f-from').value;
+  const to       = document.getElementById('f-to').value;
+  const category = document.getElementById('f-category').value;
+  let url = `/expenses?limit=200`;
+  if (from) url += `&from=${from}`;
+  if (to)   url += `&to=${to}`;
+  if (category) url += `&category=${encodeURIComponent(category)}`;
+
+  try {
+    expenses = await api.get(url);
+    renderTable(expenses);
+    await loadSummaryChart(from, to);
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function renderTable(list) {
+  const tbody = document.getElementById('expenses-table');
+  const total = list.reduce((s,e) => s + parseFloat(e.amount), 0);
+  document.getElementById('table-footer').textContent =
+    `${list.length} expense${list.length!==1?'s':''} · Total: GHS ${total.toFixed(2)}`;
+
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center" style="padding:32px">No expenses found</td></tr>';
+    return;
+  }
+  const ml = { cash:'Cash', mobile_money:'Mobile', card:'Card', bank_transfer:'Bank' };
+  tbody.innerHTML = list.map(e => `
+    <tr>
+      <td class="text-muted">${e.date?.slice(0,10)||'—'}</td>
+      <td><span class="category-badge">${e.category}</span></td>
+      <td>${e.description}</td>
+      <td class="text-muted">${ml[e.payment_method]||e.payment_method}</td>
+      <td class="text-right expense-total">GHS ${parseFloat(e.amount).toFixed(2)}</td>
+      <td class="text-muted" style="font-size:12px">${e.recorded_by_name||'—'}</td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="openEdit(${e.id})">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteExpense(${e.id})">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function loadStats() {
+  const now = new Date();
+  const wkStart = new Date(now); wkStart.setDate(now.getDate() - now.getDay());
+  const mStart  = now.toISOString().slice(0,8) + '01';
+
+  const [month, week, day] = await Promise.all([
+    api.get(`/expenses/summary?from=${mStart}&to=${today}`),
+    api.get(`/expenses/summary?from=${wkStart.toISOString().slice(0,10)}&to=${today}`),
+    api.get(`/expenses/summary?from=${today}&to=${today}`),
+  ]);
+  document.getElementById('s-month').textContent = fmt.currency(month.total||0);
+  document.getElementById('s-week').textContent  = fmt.currency(week.total||0);
+  document.getElementById('s-today').textContent = fmt.currency(day.total||0);
+}
+
+async function loadSummaryChart(from, to) {
+  try {
+    const summary = await api.get(`/expenses/summary?from=${from}&to=${to}`);
+    if (catChart) catChart.destroy();
+
+    const cats   = summary.by_category || [];
+    const colors = ['#ff4f6d','#ffb547','#6c63ff','#00d4aa','#38bdf8','#a78bfa','#fb923c','#34d399','#f472b6','#94a3b8'];
+
+    if (cats.length) {
+      catChart = new Chart(document.getElementById('cat-chart'), {
+        type: 'doughnut',
+        data: {
+          labels: cats.map(c=>c.category),
+          datasets: [{ data: cats.map(c=>parseFloat(c.total)), backgroundColor: colors.slice(0,cats.length), borderWidth:2, borderColor:'#1a1d27', hoverOffset:4 }]
+        },
+        options: { responsive:true, maintainAspectRatio:false, cutout:'65%', plugins:{ legend:{ display:false } } }
+      });
+    }
+
+    document.getElementById('cat-list').innerHTML = cats.map((c,i) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;border-radius:50%;background:${colors[i%colors.length]}"></div>
+          <span>${c.category}</span>
+        </div>
+        <span style="font-family:var(--mono);color:var(--danger)">GHS ${parseFloat(c.total).toFixed(2)}</span>
+      </div>`).join('');
+  } catch(_) {}
+}
+
+// ── CRUD ──────────────────────────────────────
+function openModal(id=null) {
+  editingId = id;
+  document.getElementById('modal-title').textContent = id ? 'Edit Expense' : 'Record Expense';
+  if (id) {
+    const e = expenses.find(x=>x.id===id);
+    document.getElementById('f-date').value   = e.date?.slice(0,10)||today;
+    document.getElementById('f-amount').value = e.amount;
+    document.getElementById('f-cat').value    = e.category;
+    document.getElementById('f-method').value = e.payment_method||'cash';
+    document.getElementById('f-desc').value   = e.description;
+    document.getElementById('f-ref').value    = e.reference||'';
+  } else {
+    document.getElementById('f-date').value   = today;
+    document.getElementById('f-amount').value = '';
+    document.getElementById('f-desc').value   = '';
+    document.getElementById('f-ref').value    = '';
+  }
+  document.getElementById('expense-modal').classList.remove('hidden');
+}
+
+function openEdit(id) { openModal(id); }
+document.getElementById('add-btn').addEventListener('click', () => openModal());
+document.getElementById('cancel-btn').addEventListener('click', () => document.getElementById('expense-modal').classList.add('hidden'));
+
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const body = {
+    date:           document.getElementById('f-date').value,
+    amount:         parseFloat(document.getElementById('f-amount').value),
+    category:       document.getElementById('f-cat').value,
+    payment_method: document.getElementById('f-method').value,
+    description:    document.getElementById('f-desc').value.trim(),
+    reference:      document.getElementById('f-ref').value.trim()||null,
+  };
+  if (!body.description || !body.amount || !body.category) { toast('Fill all required fields','error'); return; }
+  try {
+    if (editingId) await api.put(`/expenses/${editingId}`, body);
+    else           await api.post('/expenses', body);
+    toast('Expense saved!','success');
+    document.getElementById('expense-modal').classList.add('hidden');
+    loadExpenses(); loadStats();
+  } catch(e) { toast(e.message,'error'); }
+});
+
+async function deleteExpense(id) {
+  if (!confirm('Delete this expense?')) return;
+  try {
+    await api.delete(`/expenses/${id}`);
+    toast('Deleted','success');
+    loadExpenses(); loadStats();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+document.getElementById('filter-btn').addEventListener('click', loadExpenses);
+document.getElementById('clear-btn').addEventListener('click', () => {
+  document.getElementById('f-from').value = monthStart;
+  document.getElementById('f-to').value   = today;
+  document.getElementById('f-category').value = '';
+  loadExpenses();
+});
+
+document.getElementById('export-btn').addEventListener('click', () => {
+  if (!expenses.length) { toast('No data to export','warning'); return; }
+  const headers = ['Date','Category','Description','Method','Amount','Recorded By'];
+  const rows = expenses.map(e => [e.date?.slice(0,10),e.category,e.description,e.payment_method,parseFloat(e.amount).toFixed(2),e.recorded_by_name||'']);
+  const csv = [headers,...rows].map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = `expenses-${today}.csv`;
+  a.click();
+});
+
+load();
+</script>
+</body>
+</html>

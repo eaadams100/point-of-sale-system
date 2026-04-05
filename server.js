@@ -22,10 +22,13 @@ app.use('/api/payments',  require('./routes/payments'));
 app.use('/api/customers', require('./routes/customers'));
 app.use('/api/reports',   require('./routes/reports'));
 app.use('/api/coupons',   require('./routes/coupons'));
-app.use('/api/loyalty',  require('./routes/loyalty'));
-app.use('/api/orders',   require('./routes/purchaseOrders'));
-app.use('/api/settings', require('./routes/settings'));
+app.use('/api/loyalty',   require('./routes/loyalty'));
+app.use('/api/orders',    require('./routes/purchaseOrders'));
+app.use('/api/settings',  require('./routes/settings'));
 app.use('/api/users',     require('./routes/users'));
+
+// ⭐ ADD THIS LINE – Paystack routes
+app.use('/api/paystack',  require('./routes/paystack'));
 
 // Catch-all: serve frontend for any non-API route
 app.get('*', (req, res) => {

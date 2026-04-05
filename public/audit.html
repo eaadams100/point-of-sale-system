@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Audit Log — POS</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
+  <style>
+    .action-badge {
+      font-family: var(--mono); font-size: 10px; font-weight: 700;
+      padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .action-CREATE { background: rgba(0,212,170,0.12); color: var(--accent2); }
+    .action-UPDATE { background: rgba(108,99,255,0.12); color: var(--accent); }
+    .action-DELETE { background: rgba(255,79,109,0.12); color: var(--danger); }
+    .action-LOGIN  { background: rgba(255,181,71,0.12); color: var(--warning); }
+    .action-LOGOUT { background: rgba(139,143,168,0.12); color: var(--text-muted); }
+
+    .diff-view {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 10px 12px; font-family: var(--mono);
+      font-size: 11px; max-height: 200px; overflow-y: auto;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .diff-old { color: var(--danger); }
+    .diff-new { color: var(--accent2); }
+  </style>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/shell.js"></script>
+<script>requireAuth(); requireRole('admin'); injectShell('audit');</script>
+
+<div class="page-header">
+  <div><h1>Audit Log</h1><p>Full record of every change made in the system</p></div>
+</div>
+
+<div class="filters-bar" style="margin-bottom:20px">
+  <div class="form-group">
+    <label>From</label>
+    <input id="f-from" type="date" class="form-control"/>
+  </div>
+  <div class="form-group">
+    <label>To</label>
+    <input id="f-to" type="date" class="form-control"/>
+  </div>
+  <div class="form-group">
+    <label>Action</label>
+    <select id="f-action" class="form-control" style="width:130px">
+      <option value="">All</option>
+      <option>CREATE</option><option>UPDATE</option><option>DELETE</option>
+      <option>LOGIN</option><option>LOGOUT</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Resource</label>
+    <select id="f-resource" class="form-control" style="width:140px">
+      <option value="">All</option>
+      <option>products</option><option>sales</option><option>users</option>
+      <option>customers</option><option>inventory</option><option>coupons</option>
+      <option>expenses</option><option>settings</option><option>orders</option>
+    </select>
+  </div>
+  <button class="btn btn-primary" id="filter-btn">Apply</button>
+  <button class="btn btn-ghost"   id="clear-btn">Clear</button>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Description</th><th></th></tr>
+      </thead>
+      <tbody id="audit-table">
+        <tr><td colspan="6" class="text-muted text-center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px">
+    <span id="audit-info" style="font-size:12px;color:var(--text-muted)">—</span>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" id="prev-btn" disabled>← Prev</button>
+      <button class="btn btn-ghost btn-sm" id="next-btn" disabled>Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div class="modal-overlay hidden" id="detail-modal">
+  <div class="modal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">Entry Detail</h2>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('detail-modal').classList.add('hidden')">✕</button>
+    </div>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<script>
+const PAGE = 50;
+let offset = 0, total = 0;
+const today = new Date().toISOString().slice(0,10);
+const monthStart = today.slice(0,8)+'01';
+document.getElementById('f-from').value = monthStart;
+document.getElementById('f-to').value   = today;
+
+async function load() {
+  const from     = document.getElementById('f-from').value;
+  const to       = document.getElementById('f-to').value;
+  const action   = document.getElementById('f-action').value;
+  const resource = document.getElementById('f-resource').value;
+
+  let url = `/audit?limit=${PAGE}&offset=${offset}`;
+  if (from)     url += `&from=${from}T00:00:00`;
+  if (to)       url += `&to=${to}T23:59:59`;
+  if (action)   url += `&action=${action}`;
+  if (resource) url += `&resource=${resource}`;
+
+  try {
+    const rows = await api.get(url);
+    render(rows);
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function render(rows) {
+  const tbody = document.getElementById('audit-table');
+  document.getElementById('audit-info').textContent = `Showing ${offset+1}–${offset+rows.length}`;
+  document.getElementById('prev-btn').disabled = offset === 0;
+  document.getElementById('next-btn').disabled = rows.length < PAGE;
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center" style="padding:32px">No entries found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => `
+    <tr style="cursor:pointer" onclick='showDetail(${JSON.stringify(r).replace(/'/g,"&#39;")})'>
+      <td class="text-muted" style="white-space:nowrap;font-size:12px">${fmt.datetime(r.created_at)}</td>
+      <td>
+        <div style="font-weight:600;font-size:13px">${r.full_name||r.username||'System'}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${r.ip_address||''}</div>
+      </td>
+      <td><span class="action-badge action-${r.action}">${r.action}</span></td>
+      <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${r.resource}${r.resource_id?` #${r.resource_id}`:''}</td>
+      <td style="font-size:12px;color:var(--text-muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.description||'—'}</td>
+      <td><button class="btn btn-ghost btn-sm">View</button></td>
+    </tr>`).join('');
+}
+
+function showDetail(r) {
+  const content = document.getElementById('detail-content');
+  content.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div><div style="font-size:11px;color:var(--text-muted)">Time</div><div style="font-weight:600">${fmt.datetime(r.created_at)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-muted)">User</div><div style="font-weight:600">${r.full_name||r.username||'System'}</div></div>
+      <div><div style="font-size:11px;color:var(--text-muted)">Action</div><span class="action-badge action-${r.action}">${r.action}</span></div>
+      <div><div style="font-size:11px;color:var(--text-muted)">Resource</div><span style="font-family:var(--mono);color:var(--accent)">${r.resource} ${r.resource_id?'#'+r.resource_id:''}</span></div>
+      <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-muted)">IP Address</div><div style="font-family:var(--mono);font-size:12px">${r.ip_address||'—'}</div></div>
+      <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-muted)">Description</div><div>${r.description||'—'}</div></div>
+    </div>
+    ${r.old_value ? `
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--danger);margin-bottom:6px">Before</div>
+        <div class="diff-view diff-old">${JSON.stringify(JSON.parse(r.old_value), null, 2)}</div>
+      </div>` : ''}
+    ${r.new_value ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent2);margin-bottom:6px">After</div>
+        <div class="diff-view diff-new">${JSON.stringify(JSON.parse(r.new_value), null, 2)}</div>
+      </div>` : ''}
+  `;
+  document.getElementById('detail-modal').classList.remove('hidden');
+}
+
+document.getElementById('filter-btn').addEventListener('click', () => { offset=0; load(); });
+document.getElementById('clear-btn').addEventListener('click', () => {
+  document.getElementById('f-from').value = monthStart;
+  document.getElementById('f-to').value   = today;
+  document.getElementById('f-action').value   = '';
+  document.getElementById('f-resource').value = '';
+  offset = 0; load();
+});
+document.getElementById('prev-btn').addEventListener('click', () => { offset = Math.max(0,offset-PAGE); load(); });
+document.getElementById('next-btn').addEventListener('click', () => { offset += PAGE; load(); });
+
+load();
+</script>
+</body>
+</html>
