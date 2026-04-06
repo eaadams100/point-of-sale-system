@@ -14,10 +14,10 @@
     .action-UPDATE { background: rgba(108,99,255,0.12); color: var(--accent); }
     .action-DELETE { background: rgba(255,79,109,0.12); color: var(--danger); }
     .action-LOGIN  { background: rgba(255,181,71,0.12); color: var(--warning); }
-    .action-LOGOUT { background: rgba(139,143,168,0.12); color: var(--text-muted); }
+    .action-LOGOUT { background: rgba(139,143,168,0.12); color:var(--text-muted); }
 
     .diff-view {
-      background: var(--surface2); border: 1px solid var(--border);
+      background:var(--surface2); border: 1px solid var(--border);
       border-radius: 6px; padding: 10px 12px; font-family: var(--mono);
       font-size: 11px; max-height: 200px; overflow-y: auto;
       white-space: pre-wrap; word-break: break-all;
@@ -30,7 +30,8 @@
 <script src="/js/api.js"></script>
 <script src="/js/shell.js"></script>
 <script>requireAuth(); requireRole('admin'); injectShell('audit');</script>
-
+<div class="main-content">
+<div id="page-wrap">
 <div class="page-header">
   <div><h1>Audit Log</h1><p>Full record of every change made in the system</p></div>
 </div>
@@ -94,6 +95,8 @@
     </div>
     <div id="detail-content"></div>
   </div>
+</div>
+
 </div>
 
 <script>
@@ -185,5 +188,6 @@ document.getElementById('next-btn').addEventListener('click', () => { offset += 
 
 load();
 </script>
+</div>
 </body>
 </html>

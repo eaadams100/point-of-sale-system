@@ -1,34 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>POS System — Login</title>
-  <link rel="stylesheet" href="/css/styles.css" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In — POS System</title>
+  <link rel="stylesheet" href="/css/styles.css"/>
   <style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg); padding: 16px; }
-
-    .login-wrap {
-      width: 100%;
-      max-width: 380px;
-      padding: 0;
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--bg);
+      padding: 20px;
     }
+
+    .login-wrap { width: 100%; max-width: 380px; }
 
     .login-logo {
       text-align: center;
-      margin-bottom: 36px;
+      margin-bottom: 32px;
     }
     .login-logo .wordmark {
       font-family: var(--mono);
-      font-size: 28px;
+      font-size: 26px;
       font-weight: 700;
       color: var(--accent);
+      letter-spacing: -0.5px;
     }
     .login-logo .tagline {
       font-size: 12px;
       color: var(--text-muted);
       margin-top: 4px;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
     }
 
     .login-card {
@@ -37,7 +41,6 @@
       border-radius: 16px;
       padding: 32px;
     }
-
     .login-card h2 {
       font-size: 18px;
       font-weight: 700;
@@ -49,21 +52,32 @@
       margin-bottom: 28px;
     }
 
-    #error-msg {
-      background: rgba(255,79,109,0.1);
-      border: 1px solid rgba(255,79,109,0.3);
+    .error-box {
+      background: var(--danger-s);
+      border: 1px solid rgba(255,79,109,0.25);
       color: var(--danger);
       padding: 10px 14px;
-      border-radius: 8px;
+      border-radius: var(--radius);
       font-size: 13px;
       margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .login-footer {
       text-align: center;
       margin-top: 20px;
       font-size: 12px;
+      color: var(--text-light);
+    }
+    .login-footer code {
+      font-family: var(--mono);
+      background: var(--surface2);
+      padding: 2px 6px;
+      border-radius: 4px;
       color: var(--text-muted);
+      font-size: 11px;
     }
   </style>
 </head>
@@ -78,59 +92,67 @@
       <h2>Welcome back</h2>
       <p class="subtitle">Sign in to your account to continue.</p>
 
-      <div id="error-msg" class="hidden"></div>
+      <div id="error-box" class="error-box hidden">
+        <span>⚠</span><span id="error-msg"></span>
+      </div>
 
       <div class="form-group">
         <label>Username</label>
-        <input id="username" type="text" class="form-control" placeholder="Enter your username" autocomplete="username" />
+        <input id="username" type="text" class="form-control"
+               placeholder="Enter your username"
+               autocomplete="username" style="height:40px"/>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" style="margin-bottom:20px">
         <label>Password</label>
-        <input id="password" type="password" class="form-control" placeholder="••••••••" autocomplete="current-password" />
+        <input id="password" type="password" class="form-control"
+               placeholder="••••••••"
+               autocomplete="current-password" style="height:40px"/>
       </div>
 
-      <button id="login-btn" class="btn btn-primary btn-lg w-full" style="margin-top:8px;">
+      <button id="login-btn" class="btn btn-primary btn-lg w-full">
         Sign In
       </button>
     </div>
 
-    <div class="login-footer">Default: admin / admin123</div>
+    <div class="login-footer">
+      Default: <code>admin</code> / <code>admin123</code>
+    </div>
   </div>
 
-  <script src="/js/api.js"></script>
-  <script>
-    // Redirect if already logged in
-    if (Auth.isLoggedIn()) window.location.href = '/dashboard.html';
+<script src="/js/api.js"></script>
+<script>
+  if (Auth.isLoggedIn()) window.location.href = '/dashboard.html';
 
-    const btn = document.getElementById('login-btn');
-    const errEl = document.getElementById('error-msg');
+  const btn    = document.getElementById('login-btn');
+  const errBox = document.getElementById('error-box');
+  const errMsg = document.getElementById('error-msg');
 
-    async function doLogin() {
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-      if (!username || !password) {
-        errEl.textContent = 'Please enter username and password.';
-        errEl.classList.remove('hidden');
-        return;
-      }
-      btn.disabled = true;
-      btn.textContent = 'Signing in…';
-      errEl.classList.add('hidden');
-      try {
-        const data = await api.post('/auth/login', { username, password });
-        Auth.set(data.token, data.user);
-        window.location.href = '/dashboard.html';
-      } catch (err) {
-        errEl.textContent = err.message;
-        errEl.classList.remove('hidden');
-        btn.disabled = false;
-        btn.textContent = 'Sign In';
-      }
+  async function doLogin() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    if (!username || !password) {
+      errMsg.textContent = 'Please enter username and password.';
+      errBox.classList.remove('hidden');
+      return;
     }
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    errBox.classList.add('hidden');
+    try {
+      const data = await api.post('/auth/login', { username, password });
+      Auth.set(data.token, data.user);
+      window.location.href = '/dashboard.html';
+    } catch(err) {
+      errMsg.textContent = err.message;
+      errBox.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
+  }
 
-    btn.addEventListener('click', doLogin);
-    document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-  </script>
+  btn.addEventListener('click', doLogin);
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+</script>
 </body>
 </html>

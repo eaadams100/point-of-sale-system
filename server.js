@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-
+const { auditMiddleware } = require('./controllers/auditController');
 const app = express();
 
 // Middleware
@@ -26,9 +26,13 @@ app.use('/api/loyalty',   require('./routes/loyalty'));
 app.use('/api/orders',    require('./routes/purchaseOrders'));
 app.use('/api/settings',  require('./routes/settings'));
 app.use('/api/users',     require('./routes/users'));
+app.use('/api/expenses',  require('./routes/expenses'));
+app.use('/api/audit',     require('./routes/audit'));
 
 // ⭐ ADD THIS LINE – Paystack routes
-app.use('/api/paystack',  require('./routes/paystack'));
+// app.use('/api/paystack',  require('./routes/paystack'));
+
+app.use('/api/custom-payment', require('./routes/customPayment'));
 
 // Catch-all: serve frontend for any non-API route
 app.get('*', (req, res) => {
@@ -38,7 +42,9 @@ app.get('*', (req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  res.status(err.status || 500).json({
+    error: err.message || 'Something went wrong. Please try again.'
+  });
 });
 
 const PORT = process.env.PORT || 3000;

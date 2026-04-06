@@ -289,6 +289,8 @@
       requireAuth();
       injectShell("pos");
     </script>
+    <div class="main-content">
+      
     <div id="page-wrap">
       <div class="pos-layout" id="pos-layout">
         <!-- Mobile tab bar (hidden on desktop via CSS) -->
@@ -611,6 +613,7 @@
         </div>
       </div>
 
+    </div>
       <script>
         let allProducts = [];
         let cart = [];
@@ -1041,39 +1044,29 @@
             btn.textContent = "Processing…";
 
             try {
-              // For Paystack mobile money — initiate charge first, then complete sale
-              if (!isSplit && payment_method === "mobile_money") {
-                const momoResult = await initiateMomoPayment(grandTotal, null);
-                if (!momoResult) {
-                  btn.disabled = false;
-                  btn.textContent = "Checkout →";
-                  return;
-                }
-
-                // If OTP was required, the function returns null and we need to wait for OTP submission
-                // The OTP submission will trigger the checkout again via the button click
-                if (momoResult === null) {
-                  btn.disabled = false;
-                  btn.textContent = "Checkout →";
-                  return; // Wait for OTP to be submitted
-                }
-
-                // Poll for confirmation (max 60s, every 5s)
-                btn.textContent = "Waiting for approval on phone...";
-                let confirmed = false;
-                for (let i = 0; i < 12; i++) {
-                  await new Promise((r) => setTimeout(r, 5000));
-                  confirmed = await verifyMomoPayment(paystackRef);
-                  if (confirmed) break;
-                  btn.textContent = `Waiting... (${(12 - i - 1) * 5}s remaining)`;
-                }
-                if (!confirmed) {
-                  toast("Payment not confirmed. Sale not recorded.", "error");
-                  btn.disabled = false;
-                  btn.textContent = "Checkout →";
-                  return;
-                }
-              }
+             // For custom mobile money payment
+if (!isSplit && payment_method === "mobile_money") {
+  // Store sale data for later completion
+  pendingSaleData = {
+    items: cart.map(i => ({ product_id: i.product.id, quantity: i.quantity })),
+    discount, tax: 0, payment_method, customer_id,
+    coupon_code: appliedCoupon ? appliedCoupon.code : null,
+    payments: [{ method: payment_method, amount: grandTotal }]
+  };
+  
+  const paymentResult = await initiateCustomPayment(grandTotal, null);
+  if (!paymentResult) {
+    pendingSaleData = null;
+    btn.disabled = false;
+    btn.textContent = "Checkout →";
+    return;
+  }
+  
+  // The OTP submission will call completeSaleAfterPayment()
+  btn.disabled = false;
+  btn.textContent = "Checkout →";
+  return;
+}
 
               const saleData = {
                 items: cart.map((i) => ({
@@ -1104,7 +1097,6 @@
               appliedCoupon = null;
               loyaltyRedeem = null;
               isSplit = false;
-              paystackRef = null;
               document.getElementById("coupon-input").value = "";
               document.getElementById("coupon-input").disabled = false;
               document
@@ -1271,99 +1263,80 @@
               .classList.toggle("hidden", !isMomo);
           });
 
-        let paystackRef = null;
-        let pollInterval = null;
+       // ── Custom Payment Gateway (Mobile Money) ─────────────
+let customPaymentRef = null;
+let pendingSaleData = null;
 
-        async function initiateMomoPayment(amount, saleId) {
+async function initiateCustomPayment(amount, saleId) {
   const phone = document.getElementById('momo-phone').value.trim();
   const provider = document.getElementById('momo-provider').value;
   const statusEl = document.getElementById('momo-status');
 
   if (!phone) { toast('Enter the customer mobile number', 'error'); return null; }
 
+  // Validate test phone numbers
+  const validNumbers = ['0240000000', '0270000000', '0260000000'];
+  if (!validNumbers.includes(phone.replace(/\s/g, ''))) {
+    toast('Use test number: 0240000000 (MTN), 0270000000 (Vodafone), or 0260000000 (AirtelTigo)', 'warning');
+    return null;
+  }
+
   statusEl.classList.remove('hidden');
   statusEl.style.background = 'var(--surface2)';
-  statusEl.textContent = '⏳ Sending payment request...';
-
-  // Generate a simple email
-  const customerEmail = `test${Date.now()}@example.com`;
+  statusEl.textContent = '⏳ Initializing payment...';
 
   try {
-    const result = await api.post('/paystack/mobile-money', {
-      amount, phone, provider, email: customerEmail, sale_id: saleId
+    const result = await api.post('/custom-payment/mobile-money', {
+      amount, phone, provider, sale_id: saleId
     });
     
-    paystackRef = result.reference;
-    console.log('Paystack response:', result); // Check browser console
-
-    // Handle different statuses
-    if (result.status === 'send_otp') {
-      // Show OTP input
-      statusEl.innerHTML = `
-        📱 OTP sent to ${phone}<br/>
-        <div style="margin-top:8px; display:flex; gap:6px;">
-          <input type="text" id="otp-input" placeholder="Enter OTP" style="flex:1; padding:6px; background:var(--surface); border:1px solid var(--border); border-radius:4px; color:white;">
-          <button id="submit-otp-btn" class="btn btn-sm btn-primary">Verify</button>
-        </div>
-      `;
-      document.getElementById('submit-otp-btn')?.addEventListener('click', async () => {
-        const otp = document.getElementById('otp-input').value;
-        if (otp) await submitOTP(paystackRef, otp);
-      });
-      return null;
-    } 
-    else if (result.status === 'pending' || result.status === 'charge_attempt') {
-      statusEl.style.background = 'rgba(217,119,6,0.1)';
-      statusEl.style.color = 'var(--warning)';
-      statusEl.textContent = `📱 ${result.display_text || 'Check your phone and approve payment'}`;
-      return result;
-    }
-    else if (result.status === 'success') {
-      statusEl.style.background = 'rgba(5,150,105,0.1)';
-      statusEl.style.color = 'var(--accent2)';
-      statusEl.textContent = '✓ Payment successful!';
-      return result;
-    }
-    else {
-      statusEl.style.background = 'rgba(220,38,38,0.1)';
-      statusEl.style.color = 'var(--danger)';
-      statusEl.textContent = `⚠️ ${result.display_text || 'Unknown status'}`;
-      return null;
-    }
+    customPaymentRef = result.data.reference;
+    
+    // Show OTP input field (test OTP is 123456)
+    statusEl.innerHTML = `
+      📱 ${result.data.display_text}<br/>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <input type="text" id="custom-otp-input" placeholder="Enter OTP" 
+               style="flex:1; padding:8px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:white;">
+        <button id="custom-submit-otp" class="btn btn-primary btn-sm">Verify</button>
+      </div>
+    `;
+    
+    document.getElementById('custom-submit-otp')?.addEventListener('click', async () => {
+      const otp = document.getElementById('custom-otp-input').value;
+      if (otp) await submitCustomOTP(customPaymentRef, otp);
+    });
+    
+    return result;
   } catch(e) {
     statusEl.style.background = 'rgba(220,38,38,0.1)';
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = `✗ ${e.message}`;
-    console.error(e);
     return null;
   }
 }
 
-async function submitOTP(reference, otp) {
+async function submitCustomOTP(reference, otp) {
   const statusEl = document.getElementById('momo-status');
   statusEl.textContent = '⏳ Verifying OTP...';
+  
   try {
-    // In test mode, Paystack OTP is always 12345
-    // For mobile money, you may not need to submit OTP separately - just poll
-    // Start polling the transaction status
-    statusEl.textContent = '⏳ Waiting for payment confirmation...';
-    let confirmed = false;
-    for (let i = 0; i < 12; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      const verifyResult = await api.get(`/paystack/verify/${reference}`);
-      if (verifyResult.success === true) {
-        confirmed = true;
-        break;
-      }
-    }
-    if (confirmed) {
+    const result = await api.post('/custom-payment/submit-otp', { reference, otp });
+    
+    if (result.status) {
       statusEl.style.background = 'rgba(5,150,105,0.1)';
       statusEl.style.color = 'var(--accent2)';
-      statusEl.textContent = '✓ Payment confirmed!';
-      // Re-run checkout to complete sale
-      document.getElementById('checkout-btn').click();
+      statusEl.textContent = '✓ Payment successful!';
+      
+      // Complete the sale if pending data exists
+      if (pendingSaleData) {
+        await completeSaleAfterPayment();
+      } else {
+        // Trigger checkout again if needed
+        document.getElementById('checkout-btn').click();
+      }
     } else {
-      throw new Error('Payment confirmation timed out');
+      throw new Error(result.message || 'Invalid OTP');
     }
   } catch(e) {
     statusEl.style.background = 'rgba(220,38,38,0.1)';
@@ -1372,94 +1345,63 @@ async function submitOTP(reference, otp) {
   }
 }
 
-async function verifyMomoPayment(reference) {
-  const statusEl = document.getElementById('momo-status');
-  statusEl.textContent = '⏳ Verifying payment...';
+async function verifyCustomPayment(reference) {
   try {
-    const result = await api.get(`/paystack/verify/${reference}`);
-    if (result.success === true) {
-      statusEl.style.background = 'rgba(5,150,105,0.1)';
-      statusEl.style.color = 'var(--accent2)';
-      statusEl.textContent = '✓ Payment confirmed!';
-      return true;
-    } else if (result.status === 'pending') {
-      statusEl.textContent = '⏳ Still waiting for approval...';
-      return false;
-    } else {
-      statusEl.style.background = 'rgba(220,38,38,0.1)';
-      statusEl.style.color = 'var(--danger)';
-      statusEl.textContent = `✗ Payment ${result.status || 'failed'}`;
-      return false;
-    }
+    const result = await api.get(`/custom-payment/verify/${reference}`);
+    return result.status === true;
   } catch(e) {
-    statusEl.textContent = `✗ ${e.message}`;
     return false;
   }
 }
 
-        async function submitOTP(reference, otp) {
-          const statusEl = document.getElementById("momo-status");
-          statusEl.textContent = "⏳ Verifying OTP...";
-          try {
-            // Paystack requires a separate endpoint for OTP submission
-            // For test mode, the OTP is always 12345, and Paystack auto-approves
-            // So we just poll for status change
-            statusEl.textContent = "⏳ Waiting for approval...";
-            // Start polling immediately
-            let confirmed = false;
-            for (let i = 0; i < 12; i++) {
-              await new Promise((r) => setTimeout(r, 5000));
-              const result = await api.get(`/paystack/verify/${reference}`);
-              if (result.success) {
-                confirmed = true;
-                break;
-              }
-            }
-            if (confirmed) {
-              statusEl.style.background = "rgba(5,150,105,0.1)";
-              statusEl.style.color = "var(--accent2)";
-              statusEl.textContent = "✓ Payment confirmed!";
-              // Trigger checkout completion
-              document.getElementById("checkout-btn").click();
-            } else {
-              statusEl.style.background = "rgba(220,38,38,0.1)";
-              statusEl.style.color = "var(--danger)";
-              statusEl.textContent = "✗ OTP verification failed or timed out";
-            }
-          } catch (e) {
-            statusEl.textContent = `✗ ${e.message}`;
-          }
-        }
+async function completeSaleAfterPayment() {
+  if (!pendingSaleData) return;
+  
+  try {
+    const sale = await api.post('/sales', pendingSaleData);
+    
+    // Deduct redeemed loyalty points
+    if (loyaltyRedeem && pendingSaleData.customer_id) {
+      await api.post('/loyalty/adjust', {
+        customer_id: pendingSaleData.customer_id,
+        points: -loyaltyRedeem.points,
+        note: `Redeemed on sale ${sale.reference}`
+      });
+    }
+    
+    showReceipt(sale);
+    resetAfterSale();
+    pendingSaleData = null;
+    await Promise.all([loadProducts(), loadCustomers()]);
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
 
-        async function verifyMomoPayment(reference) {
-          const statusEl = document.getElementById("momo-status");
-          if (!statusEl) return false;
-
-          statusEl.textContent = "⏳ Verifying payment...";
-          try {
-            const result = await api.get(`/paystack/verify/${reference}`);
-            console.log("Verification result:", result);
-
-            if (result.success === true) {
-              statusEl.style.background = "rgba(5,150,105,0.1)";
-              statusEl.style.color = "var(--accent2)";
-              statusEl.textContent = "✓ Payment confirmed!";
-              return true;
-            } else if (result.status === "pending") {
-              statusEl.textContent = "⏳ Still waiting for approval...";
-              return false;
-            } else {
-              statusEl.style.background = "rgba(220,38,38,0.1)";
-              statusEl.style.color = "var(--danger)";
-              statusEl.textContent = `✗ Payment ${result.status || "failed"}. Try again.`;
-              return false;
-            }
-          } catch (e) {
-            console.error("Verification error:", e);
-            statusEl.textContent = `✗ ${e.message}`;
-            return false;
-          }
-        }
+function resetAfterSale() {
+  cart = [];
+  appliedCoupon = null;
+  loyaltyRedeem = null;
+  isSplit = false;
+  customPaymentRef = null;
+  document.getElementById('coupon-input').value = '';
+  document.getElementById('coupon-input').disabled = false;
+  document.getElementById('apply-coupon-btn').classList.remove('hidden');
+  document.getElementById('remove-coupon-btn').classList.add('hidden');
+  document.getElementById('coupon-feedback').classList.add('hidden');
+  document.getElementById('points-redeemed-info').classList.add('hidden');
+  document.getElementById('use-points-btn').classList.remove('hidden');
+  document.getElementById('loyalty-info').classList.add('hidden');
+  document.getElementById('customer-select').value = '';
+  document.getElementById('single-payment').classList.remove('hidden');
+  document.getElementById('split-payment').classList.add('hidden');
+  document.getElementById('toggle-split-btn').textContent = '+ Split';
+  document.getElementById('momo-fields').classList.add('hidden');
+  document.getElementById('momo-status').classList.add('hidden');
+  document.getElementById('payment-method').value = 'cash';
+  renderCart();
+  document.getElementById('discount-input').value = 0;
+}
 
         // ── Mobile tab switching ──────────────────────
         function switchPosTab(tab) {

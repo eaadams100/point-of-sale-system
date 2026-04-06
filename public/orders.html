@@ -33,6 +33,7 @@
 <script src="/js/shell.js"></script>
 <script>requireAuth(); requireRole('admin','manager'); injectShell('orders');</script>
 
+<div class="main-content">
 <div class="page-header">
   <div><h1>Purchase Orders</h1><p>Reorder stock from suppliers</p></div>
   <div style="display:flex;gap:8px">
@@ -145,6 +146,8 @@
     </div>
     <button class="btn btn-ghost w-full mt-2" onclick="document.getElementById('suppliers-modal').classList.add('hidden')">Close</button>
   </div>
+</div>
+
 </div>
 
 <script>

@@ -31,14 +31,24 @@ const api = {
     if (body) opts.body = JSON.stringify(body);
 
     const res = await fetch(this._base + path, opts);
-    const data = await res.json();
+
+    // Guard against non-JSON responses (HTML error pages, etc.)
+    const contentType = res.headers.get('content-type') || '';
+    let data;
+    if (contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      // If server sent an HTML error page, give a clean message
+      data = { error: `Server error (${res.status}): ${text.slice(0, 120).replace(/<[^>]+>/g, '').trim()}` };
+    }
 
     if (res.status === 401 || res.status === 403) {
       Auth.clear();
       window.location.href = '/index.html';
       return;
     }
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     return data;
   },
 

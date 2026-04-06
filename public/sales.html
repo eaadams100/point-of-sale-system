@@ -1,397 +1,569 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sales History — POS</title>
-  <link rel="stylesheet" href="/css/styles.css"/>
-  <style>
-    .filters-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 20px;
-      align-items: flex-end;
-    }
-    .filters-bar .form-group { margin-bottom: 0; }
-    .filters-bar label { font-size: 11px; }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sales History — POS</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+    <style>
+      .filters-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
+        align-items: flex-end;
+      }
+      .filters-bar .form-group {
+        margin-bottom: 0;
+      }
+      .filters-bar label {
+        font-size: 11px;
+      }
 
-    .detail-panel {
-      position: fixed;
-      top: 56px; right: 0; bottom: 0;
-      width: 400px;
-      background: var(--surface);
-      border-left: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      transform: translateX(100%);
-      transition: transform 0.25s ease;
-      z-index: 50;
-    }
-    .detail-panel.open { transform: translateX(0); }
+      .detail-panel {
+        position: fixed;
+        top: 56px;
+        right: 0;
+        bottom: 0;
+        width: 400px;
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+        z-index: 50;
+      }
+      .detail-panel.open {
+        transform: translateX(0);
+      }
 
-    .detail-header {
-      padding: 20px 24px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .detail-header h3 { font-size: 15px; font-weight: 700; }
+      .detail-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .detail-header h3 {
+        font-size: 15px;
+        font-weight: 700;
+      }
 
-    .detail-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px 24px;
-    }
+      .detail-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 24px;
+      }
 
-    .detail-section { margin-bottom: 24px; }
-    .detail-section .ds-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--text-muted);
-      margin-bottom: 10px;
-      font-weight: 600;
-    }
+      .detail-section {
+        margin-bottom: 24px;
+      }
+      .detail-section .ds-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+        font-weight: 600;
+      }
 
-    .info-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .info-item .i-label { font-size: 11px; color: var(--text-muted); }
-    .info-item .i-value { font-size: 13px; font-weight: 600; margin-top: 2px; }
+      .info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .info-item .i-label {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .info-item .i-value {
+        font-size: 13px;
+        font-weight: 600;
+        margin-top: 2px;
+      }
 
-    .item-line {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border);
-      font-size: 13px;
-    }
-    .item-line:last-child { border-bottom: none; }
-    .item-line .il-name { font-weight: 500; }
-    .item-line .il-qty  { color: var(--text-muted); font-size: 12px; }
-    .item-line .il-total { font-family: var(--mono); color: var(--accent2); }
+      .item-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .item-line:last-child {
+        border-bottom: none;
+      }
+      .item-line .il-name {
+        font-weight: 500;
+      }
+      .item-line .il-qty {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+      .item-line .il-total {
+        font-family: var(--mono);
+        color: var(--accent2);
+      }
 
-    .total-block {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 16px;
-    }
-    .total-block .t-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 13px;
-      padding: 3px 0;
-      color: var(--text-muted);
-    }
-    .total-block .t-row.grand {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text);
-      font-family: var(--mono);
-      padding-top: 10px;
-      margin-top: 6px;
-      border-top: 1px solid var(--border);
-    }
+      .total-block {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+      .total-block .t-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        padding: 3px 0;
+        color: var(--text-muted);
+      }
+      .total-block .t-row.grand {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text);
+        font-family: var(--mono);
+        padding-top: 10px;
+        margin-top: 6px;
+        border-top: 1px solid var(--border);
+      }
 
-    .void-btn { margin-top: 16px; }
+      .void-btn {
+        margin-top: 16px;
+      }
 
-    /* Slide main content left when panel open */
-    .content-shifted { margin-right: 400px; transition: margin-right 0.25s ease; }
+      /* Slide main content left when panel open */
+      .content-shifted {
+        margin-right: 400px;
+        transition: margin-right 0.25s ease;
+      }
 
-    .clickable-row { cursor: pointer; }
-    .clickable-row:hover td { background: var(--surface2); }
-    .selected-row td { background: rgba(108,99,255,0.08) !important; border-left: 3px solid var(--accent); }
+      .clickable-row {
+        cursor: pointer;
+      }
+      .clickable-row:hover td {
+        background: var(--surface2);
+      }
+      .selected-row td {
+        background: rgba(108, 99, 255, 0.08) !important;
+        border-left: 3px solid var(--accent);
+      }
 
-    .pagination {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-top: 16px;
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-    .pagination .pg-btns { display: flex; gap: 6px; }
-  </style>
-</head>
-<body>
-<script src="/js/api.js"></script>
-<script src="/js/shell.js"></script>
-<script>requireAuth(); injectShell('sales');</script>
+      .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 16px;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .pagination .pg-btns {
+        display: flex;
+        gap: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="/js/api.js"></script>
+    <script src="/js/shell.js"></script>
+    <script>
+      requireAuth();
+      injectShell("sales");
+    </script>
 
-<div id="main-wrap">
-  <div class="page-header">
-    <div><h1>Sales History</h1><p>All transactions and receipts</p></div>
-    <div style="display:flex;gap:10px">
-      <button class="btn btn-ghost" id="export-btn">↓ Export CSV</button>
-    </div>
-  </div>
+    <div class="main-content">
+      <div id="main-wrap">
+        <div class="page-header">
+          <div>
+            <h1>Sales History</h1>
+            <p>All transactions and receipts</p>
+          </div>
+          <div style="display: flex; gap: 10px">
+            <button class="btn btn-ghost" id="export-btn">↓ Export CSV</button>
+          </div>
+        </div>
 
-  <!-- Summary stats -->
-  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
-    <div class="stat-card"><div class="label">Shown Revenue</div><div class="value success" id="s-revenue">—</div></div>
-    <div class="stat-card"><div class="label">Transactions</div><div class="value accent"   id="s-count">—</div></div>
-    <div class="stat-card"><div class="label">Avg Sale</div><div class="value"              id="s-avg">—</div></div>
-    <div class="stat-card"><div class="label">Voided</div><div class="value danger"         id="s-voided">—</div></div>
-  </div>
+        <!-- Summary stats -->
+        <div
+          class="stat-grid"
+          style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px"
+        >
+          <div class="stat-card">
+            <div class="label">Shown Revenue</div>
+            <div class="value success" id="s-revenue">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Transactions</div>
+            <div class="value accent" id="s-count">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Avg Sale</div>
+            <div class="value" id="s-avg">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Voided</div>
+            <div class="value danger" id="s-voided">—</div>
+          </div>
+        </div>
 
-  <!-- Filters -->
-  <div class="filters-bar">
-    <div class="form-group">
-      <label>From Date</label>
-      <input id="f-from" type="date" class="form-control"/>
-    </div>
-    <div class="form-group">
-      <label>To Date</label>
-      <input id="f-to" type="date" class="form-control"/>
-    </div>
-    <div class="form-group">
-      <label>Payment</label>
-      <select id="f-method" class="form-control" style="width:140px">
-        <option value="">All Methods</option>
-        <option value="cash">Cash</option>
-        <option value="mobile_money">Mobile Money</option>
-        <option value="card">Card</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Status</label>
-      <select id="f-status" class="form-control" style="width:130px">
-        <option value="">All</option>
-        <option value="completed">Completed</option>
-        <option value="voided">Voided</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Search ref / cashier</label>
-      <input id="f-search" class="form-control" placeholder="TXN- or name…" style="width:200px"/>
-    </div>
-    <button class="btn btn-primary" id="apply-filters">Apply</button>
-    <button class="btn btn-ghost"   id="clear-filters">Clear</button>
-  </div>
+        <!-- Filters -->
+        <div class="filters-bar">
+          <div class="form-group">
+            <label>From Date</label>
+            <input id="f-from" type="date" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label>To Date</label>
+            <input id="f-to" type="date" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label>Payment</label>
+            <select id="f-method" class="form-control" style="width: 140px">
+              <option value="">All Methods</option>
+              <option value="cash">Cash</option>
+              <option value="mobile_money">Mobile Money</option>
+              <option value="card">Card</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="f-status" class="form-control" style="width: 130px">
+              <option value="">All</option>
+              <option value="completed">Completed</option>
+              <option value="voided">Voided</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Search ref / cashier</label>
+            <input
+              id="f-search"
+              class="form-control"
+              placeholder="TXN- or name…"
+              style="width: 200px"
+            />
+          </div>
+          <button class="btn btn-primary" id="apply-filters">Apply</button>
+          <button class="btn btn-ghost" id="clear-filters">Clear</button>
+        </div>
 
-  <div class="card">
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Reference</th>
-            <th>Date & Time</th>
-            <th>Cashier</th>
-            <th>Customer</th>
-            <th>Method</th>
-            <th class="text-right">Total</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="sales-table">
-          <tr><td colspan="7" class="text-muted text-center">Loading…</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="pagination">
-      <span id="pagination-info">—</span>
-      <div class="pg-btns">
-        <button class="btn btn-ghost btn-sm" id="prev-btn" disabled>← Prev</button>
-        <button class="btn btn-ghost btn-sm" id="next-btn" disabled>Next →</button>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reference</th>
+                  <th>Date & Time</th>
+                  <th>Cashier</th>
+                  <th>Customer</th>
+                  <th>Method</th>
+                  <th class="text-right">Total</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="sales-table">
+                <tr>
+                  <td colspan="7" class="text-muted text-center">Loading…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <span id="pagination-info">—</span>
+            <div class="pg-btns">
+              <button class="btn btn-ghost btn-sm" id="prev-btn" disabled>
+                ← Prev
+              </button>
+              <button class="btn btn-ghost btn-sm" id="next-btn" disabled>
+                Next →
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sale Detail Panel -->
+      <div class="detail-panel" id="detail-panel">
+        <div class="detail-header">
+          <div>
+            <h3 id="dp-ref">—</h3>
+            <div class="text-muted" style="font-size: 12px" id="dp-date">—</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="close-panel">✕</button>
+        </div>
+
+        <div class="detail-body">
+          <div class="detail-section">
+            <div class="ds-label">Transaction Info</div>
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="i-label">Cashier</div>
+                <div class="i-value" id="dp-cashier">—</div>
+              </div>
+              <div class="info-item">
+                <div class="i-label">Customer</div>
+                <div class="i-value" id="dp-customer">—</div>
+              </div>
+              <div class="info-item">
+                <div class="i-label">Payment</div>
+                <div class="i-value" id="dp-method">—</div>
+              </div>
+              <div class="info-item">
+                <div class="i-label">Status</div>
+                <div class="i-value" id="dp-status">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <div class="ds-label">Items</div>
+            <div id="dp-items">—</div>
+          </div>
+
+          <div class="detail-section">
+            <div class="ds-label">Totals</div>
+            <div class="total-block">
+              <div class="t-row">
+                <span>Subtotal</span><span id="dp-subtotal">—</span>
+              </div>
+              <div class="t-row" id="dp-discount-row">
+                <span>Discount</span><span id="dp-discount">—</span>
+              </div>
+              <div class="t-row" id="dp-tax-row">
+                <span>Tax</span><span id="dp-tax">—</span>
+              </div>
+              <div class="t-row grand">
+                <span>TOTAL</span><span id="dp-total">—</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="void-section"></div>
+
+          <a
+            id="receipt-link"
+            href="#"
+            target="_blank"
+            class="btn btn-ghost w-full"
+            style="margin-top: 8px; text-align: center; text-decoration: none"
+          >
+            🖨 Open Printable Receipt
+          </a>
+        </div>
       </div>
     </div>
-  </div>
-</div>
 
-<!-- Sale Detail Panel -->
-<div class="detail-panel" id="detail-panel">
-  <div class="detail-header">
-    <div>
-      <h3 id="dp-ref">—</h3>
-      <div class="text-muted" style="font-size:12px" id="dp-date">—</div>
-    </div>
-    <button class="btn btn-ghost btn-sm" id="close-panel">✕</button>
-  </div>
+    <script>
+      const PAGE_SIZE = 25;
+      let currentPage = 0;
+      let allSales = [];
+      let filteredSales = [];
+      let selectedId = null;
 
-  <div class="detail-body">
-    <div class="detail-section">
-      <div class="ds-label">Transaction Info</div>
-      <div class="info-grid">
-        <div class="info-item"><div class="i-label">Cashier</div><div class="i-value" id="dp-cashier">—</div></div>
-        <div class="info-item"><div class="i-label">Customer</div><div class="i-value" id="dp-customer">—</div></div>
-        <div class="info-item"><div class="i-label">Payment</div><div class="i-value" id="dp-method">—</div></div>
-        <div class="info-item"><div class="i-label">Status</div><div class="i-value" id="dp-status">—</div></div>
-      </div>
-    </div>
+      // ── Set default date range (last 30 days) ────
+      const today = new Date();
+      const prior = new Date();
+      prior.setDate(prior.getDate() - 30);
+      document.getElementById("f-from").value = prior
+        .toISOString()
+        .slice(0, 10);
+      document.getElementById("f-to").value = today.toISOString().slice(0, 10);
 
-    <div class="detail-section">
-      <div class="ds-label">Items</div>
-      <div id="dp-items">—</div>
-    </div>
+      // ── Load ──────────────────────────────────────
+      async function loadSales() {
+        const from = document.getElementById("f-from").value;
+        const to = document.getElementById("f-to").value;
+        let url = `/sales?limit=500`;
+        if (from) url += `&from=${from}`;
+        if (to) url += `&to=${to}T23:59:59`;
 
-    <div class="detail-section">
-      <div class="ds-label">Totals</div>
-      <div class="total-block">
-        <div class="t-row"><span>Subtotal</span><span id="dp-subtotal">—</span></div>
-        <div class="t-row" id="dp-discount-row"><span>Discount</span><span id="dp-discount">—</span></div>
-        <div class="t-row" id="dp-tax-row"><span>Tax</span><span id="dp-tax">—</span></div>
-        <div class="t-row grand"><span>TOTAL</span><span id="dp-total">—</span></div>
-      </div>
-    </div>
+        try {
+          allSales = await api.get(url);
+          applyClientFilters();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }
 
-    <div id="void-section"></div>
+      function applyClientFilters() {
+        const method = document.getElementById("f-method").value;
+        const status = document.getElementById("f-status").value;
+        const search = document.getElementById("f-search").value.toLowerCase();
 
-    <a id="receipt-link" href="#" target="_blank" class="btn btn-ghost w-full" style="margin-top:8px;text-align:center;text-decoration:none">
-      🖨 Open Printable Receipt
-    </a>
-  </div>
-</div>
+        filteredSales = allSales.filter((s) => {
+          if (method && s.payment_method !== method) return false;
+          if (status && s.payment_status !== status) return false;
+          if (
+            search &&
+            !s.reference.toLowerCase().includes(search) &&
+            !(s.cashier_name || "").toLowerCase().includes(search)
+          )
+            return false;
+          return true;
+        });
 
-<script>
-const PAGE_SIZE = 25;
-let currentPage = 0;
-let allSales = [];
-let filteredSales = [];
-let selectedId = null;
+        currentPage = 0;
+        updateStats();
+        renderTable();
+      }
 
-// ── Set default date range (last 30 days) ────
-const today = new Date();
-const prior = new Date(); prior.setDate(prior.getDate() - 30);
-document.getElementById('f-from').value = prior.toISOString().slice(0,10);
-document.getElementById('f-to').value   = today.toISOString().slice(0,10);
+      function updateStats() {
+        const completed = filteredSales.filter(
+          (s) => s.payment_status === "completed",
+        );
+        const voided = filteredSales.filter(
+          (s) => s.payment_status === "voided",
+        );
+        const revenue = completed.reduce(
+          (s, r) => s + parseFloat(r.total_amount),
+          0,
+        );
+        const avg = completed.length ? revenue / completed.length : 0;
 
-// ── Load ──────────────────────────────────────
-async function loadSales() {
-  const from   = document.getElementById('f-from').value;
-  const to     = document.getElementById('f-to').value;
-  let url = `/sales?limit=500`;
-  if (from) url += `&from=${from}`;
-  if (to)   url += `&to=${to}T23:59:59`;
+        document.getElementById("s-revenue").textContent =
+          fmt.currency(revenue);
+        document.getElementById("s-count").textContent = completed.length;
+        document.getElementById("s-avg").textContent = fmt.currency(avg);
+        document.getElementById("s-voided").textContent = voided.length;
+      }
 
-  try {
-    allSales = await api.get(url);
-    applyClientFilters();
-  } catch(e) { toast(e.message, 'error'); }
-}
+      function renderTable() {
+        const tbody = document.getElementById("sales-table");
+        const start = currentPage * PAGE_SIZE;
+        const page = filteredSales.slice(start, start + PAGE_SIZE);
+        const total = filteredSales.length;
 
-function applyClientFilters() {
-  const method  = document.getElementById('f-method').value;
-  const status  = document.getElementById('f-status').value;
-  const search  = document.getElementById('f-search').value.toLowerCase();
+        document.getElementById("pagination-info").textContent = total
+          ? `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total}`
+          : "0 results";
+        document.getElementById("prev-btn").disabled = currentPage === 0;
+        document.getElementById("next-btn").disabled =
+          start + PAGE_SIZE >= total;
 
-  filteredSales = allSales.filter(s => {
-    if (method && s.payment_method !== method) return false;
-    if (status && s.payment_status !== status) return false;
-    if (search && !s.reference.toLowerCase().includes(search) &&
-        !(s.cashier_name||'').toLowerCase().includes(search)) return false;
-    return true;
-  });
+        if (!page.length) {
+          tbody.innerHTML =
+            '<tr><td colspan="7" class="text-muted text-center" style="padding:40px">No transactions found</td></tr>';
+          return;
+        }
 
-  currentPage = 0;
-  updateStats();
-  renderTable();
-}
-
-function updateStats() {
-  const completed = filteredSales.filter(s => s.payment_status === 'completed');
-  const voided    = filteredSales.filter(s => s.payment_status === 'voided');
-  const revenue   = completed.reduce((s, r) => s + parseFloat(r.total_amount), 0);
-  const avg       = completed.length ? revenue / completed.length : 0;
-
-  document.getElementById('s-revenue').textContent = fmt.currency(revenue);
-  document.getElementById('s-count').textContent   = completed.length;
-  document.getElementById('s-avg').textContent     = fmt.currency(avg);
-  document.getElementById('s-voided').textContent  = voided.length;
-}
-
-function renderTable() {
-  const tbody  = document.getElementById('sales-table');
-  const start  = currentPage * PAGE_SIZE;
-  const page   = filteredSales.slice(start, start + PAGE_SIZE);
-  const total  = filteredSales.length;
-
-  document.getElementById('pagination-info').textContent =
-    total ? `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total}` : '0 results';
-  document.getElementById('prev-btn').disabled = currentPage === 0;
-  document.getElementById('next-btn').disabled = start + PAGE_SIZE >= total;
-
-  if (!page.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center" style="padding:40px">No transactions found</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = page.map(s => `
-    <tr class="clickable-row ${s.id === selectedId ? 'selected-row' : ''}" onclick="openDetail(${s.id})">
+        tbody.innerHTML = page
+          .map(
+            (s) => `
+    <tr class="clickable-row ${s.id === selectedId ? "selected-row" : ""}" onclick="openDetail(${s.id})">
       <td class="text-mono" style="font-size:12px">${s.reference}</td>
       <td class="text-muted">${fmt.datetime(s.created_at)}</td>
-      <td>${s.cashier_name || '—'}</td>
+      <td>${s.cashier_name || "—"}</td>
       <td>${s.customer_name || '<span class="text-muted">Walk-in</span>'}</td>
       <td><span class="badge badge-info">${formatMethod(s.payment_method)}</span></td>
       <td class="text-right text-mono">${fmt.currency(s.total_amount)}</td>
-      <td><span class="badge ${s.payment_status === 'completed' ? 'badge-success' : 'badge-danger'}">
+      <td><span class="badge ${s.payment_status === "completed" ? "badge-success" : "badge-danger"}">
         ${s.payment_status}
       </span></td>
     </tr>
-  `).join('');
-}
+  `,
+          )
+          .join("");
+      }
 
-function formatMethod(m) {
-  return { cash: 'Cash', mobile_money: 'Mobile', card: 'Card', split: 'Split' }[m] || m;
-}
+      function formatMethod(m) {
+        return (
+          {
+            cash: "Cash",
+            mobile_money: "Mobile",
+            card: "Card",
+            split: "Split",
+          }[m] || m
+        );
+      }
 
-// ── Pagination ────────────────────────────────
-document.getElementById('prev-btn').addEventListener('click', () => { currentPage--; renderTable(); });
-document.getElementById('next-btn').addEventListener('click', () => { currentPage++; renderTable(); });
+      // ── Pagination ────────────────────────────────
+      document.getElementById("prev-btn").addEventListener("click", () => {
+        currentPage--;
+        renderTable();
+      });
+      document.getElementById("next-btn").addEventListener("click", () => {
+        currentPage++;
+        renderTable();
+      });
 
-// ── Filters ───────────────────────────────────
-document.getElementById('apply-filters').addEventListener('click', loadSales);
-document.getElementById('clear-filters').addEventListener('click', () => {
-  document.getElementById('f-method').value = '';
-  document.getElementById('f-status').value = '';
-  document.getElementById('f-search').value = '';
-  document.getElementById('f-from').value   = prior.toISOString().slice(0,10);
-  document.getElementById('f-to').value     = today.toISOString().slice(0,10);
-  loadSales();
-});
-document.getElementById('f-method').addEventListener('change', applyClientFilters);
-document.getElementById('f-status').addEventListener('change', applyClientFilters);
-document.getElementById('f-search').addEventListener('input',  applyClientFilters);
+      // ── Filters ───────────────────────────────────
+      document
+        .getElementById("apply-filters")
+        .addEventListener("click", loadSales);
+      document.getElementById("clear-filters").addEventListener("click", () => {
+        document.getElementById("f-method").value = "";
+        document.getElementById("f-status").value = "";
+        document.getElementById("f-search").value = "";
+        document.getElementById("f-from").value = prior
+          .toISOString()
+          .slice(0, 10);
+        document.getElementById("f-to").value = today
+          .toISOString()
+          .slice(0, 10);
+        loadSales();
+      });
+      document
+        .getElementById("f-method")
+        .addEventListener("change", applyClientFilters);
+      document
+        .getElementById("f-status")
+        .addEventListener("change", applyClientFilters);
+      document
+        .getElementById("f-search")
+        .addEventListener("input", applyClientFilters);
 
-// ── Detail Panel ──────────────────────────────
-async function openDetail(id) {
-  selectedId = id;
-  renderTable(); // highlight row
+      // ── Detail Panel ──────────────────────────────
+      async function openDetail(id) {
+        selectedId = id;
+        renderTable(); // highlight row
 
-  try {
-    const sale = await api.get(`/sales/${id}`);
-    populatePanel(sale);
-    document.getElementById('detail-panel').classList.add('open');
-    document.getElementById('main-wrap').classList.add('content-shifted');
-  } catch(e) { toast(e.message, 'error'); }
-}
+        try {
+          const sale = await api.get(`/sales/${id}`);
+          populatePanel(sale);
+          document.getElementById("detail-panel").classList.add("open");
+          document.getElementById("main-wrap").classList.add("content-shifted");
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }
 
-function populatePanel(sale) {
-  document.getElementById('dp-ref').textContent      = sale.reference;
-  document.getElementById('dp-date').textContent     = fmt.datetime(sale.created_at);
-  document.getElementById('dp-cashier').textContent  = sale.cashier_name || '—';
-  document.getElementById('dp-customer').textContent = sale.customer_name || 'Walk-in';
-  document.getElementById('dp-method').textContent   = formatMethod(sale.payment_method);
-  document.getElementById('dp-subtotal').textContent = fmt.currency(sale.subtotal);
-  document.getElementById('dp-total').textContent    = fmt.currency(sale.total_amount);
+      function populatePanel(sale) {
+        document.getElementById("dp-ref").textContent = sale.reference;
+        document.getElementById("dp-date").textContent = fmt.datetime(
+          sale.created_at,
+        );
+        document.getElementById("dp-cashier").textContent =
+          sale.cashier_name || "—";
+        document.getElementById("dp-customer").textContent =
+          sale.customer_name || "Walk-in";
+        document.getElementById("dp-method").textContent = formatMethod(
+          sale.payment_method,
+        );
+        document.getElementById("dp-subtotal").textContent = fmt.currency(
+          sale.subtotal,
+        );
+        document.getElementById("dp-total").textContent = fmt.currency(
+          sale.total_amount,
+        );
 
-  const disc = parseFloat(sale.discount);
-  const tax  = parseFloat(sale.tax);
-  document.getElementById('dp-discount-row').style.display = disc > 0 ? '' : 'none';
-  document.getElementById('dp-tax-row').style.display      = tax  > 0 ? '' : 'none';
-  document.getElementById('dp-discount').textContent = `- ${fmt.currency(disc)}`;
-  document.getElementById('dp-tax').textContent      = fmt.currency(tax);
+        const disc = parseFloat(sale.discount);
+        const tax = parseFloat(sale.tax);
+        document.getElementById("dp-discount-row").style.display =
+          disc > 0 ? "" : "none";
+        document.getElementById("dp-tax-row").style.display =
+          tax > 0 ? "" : "none";
+        document.getElementById("dp-discount").textContent =
+          `- ${fmt.currency(disc)}`;
+        document.getElementById("dp-tax").textContent = fmt.currency(tax);
 
-  const statusEl = document.getElementById('dp-status');
-  statusEl.innerHTML = `<span class="badge ${sale.payment_status === 'completed' ? 'badge-success' : 'badge-danger'}">${sale.payment_status}</span>`;
+        const statusEl = document.getElementById("dp-status");
+        statusEl.innerHTML = `<span class="badge ${sale.payment_status === "completed" ? "badge-success" : "badge-danger"}">${sale.payment_status}</span>`;
 
-  // Items
-  document.getElementById('dp-items').innerHTML = (sale.items||[]).map(item => `
+        // Items
+        document.getElementById("dp-items").innerHTML =
+          (sale.items || [])
+            .map(
+              (item) => `
     <div class="item-line">
       <div>
         <div class="il-name">${item.product_name}</div>
@@ -399,66 +571,96 @@ function populatePanel(sale) {
       </div>
       <div class="il-total">${fmt.currency(item.total_price)}</div>
     </div>
-  `).join('') || '<div class="text-muted">No items</div>';
+  `,
+            )
+            .join("") || '<div class="text-muted">No items</div>';
 
-  document.getElementById('receipt-link').href = `/receipt.html?id=${sale.id}`;
-  const voidSection = document.getElementById('void-section');
-  if (Auth.hasRole('admin','manager') && sale.payment_status === 'completed') {
-    voidSection.innerHTML = `
+        document.getElementById("receipt-link").href =
+          `/receipt.html?id=${sale.id}`;
+        const voidSection = document.getElementById("void-section");
+        if (
+          Auth.hasRole("admin", "manager") &&
+          sale.payment_status === "completed"
+        ) {
+          voidSection.innerHTML = `
       <button class="btn btn-danger w-full void-btn" onclick="voidSale(${sale.id})">
         ✕ Void This Sale
       </button>
     `;
-  } else {
-    voidSection.innerHTML = '';
-  }
-}
+        } else {
+          voidSection.innerHTML = "";
+        }
+      }
 
-async function voidSale(id) {
-  if (!confirm('Void this sale? Stock will be restored and this cannot be undone.')) return;
-  try {
-    await api.put(`/sales/${id}/void`);
-    toast('Sale voided. Stock restored.', 'success');
-    closePanel();
-    loadSales();
-  } catch(e) { toast(e.message, 'error'); }
-}
+      async function voidSale(id) {
+        if (
+          !confirm(
+            "Void this sale? Stock will be restored and this cannot be undone.",
+          )
+        )
+          return;
+        try {
+          await api.put(`/sales/${id}/void`);
+          toast("Sale voided. Stock restored.", "success");
+          closePanel();
+          loadSales();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }
 
-function closePanel() {
-  selectedId = null;
-  document.getElementById('detail-panel').classList.remove('open');
-  document.getElementById('main-wrap').classList.remove('content-shifted');
-  renderTable();
-}
+      function closePanel() {
+        selectedId = null;
+        document.getElementById("detail-panel").classList.remove("open");
+        document
+          .getElementById("main-wrap")
+          .classList.remove("content-shifted");
+        renderTable();
+      }
 
-document.getElementById('close-panel').addEventListener('click', closePanel);
+      document
+        .getElementById("close-panel")
+        .addEventListener("click", closePanel);
 
-// ── Export CSV ────────────────────────────────
-document.getElementById('export-btn').addEventListener('click', () => {
-  if (!filteredSales.length) { toast('No data to export', 'warning'); return; }
+      // ── Export CSV ────────────────────────────────
+      document.getElementById("export-btn").addEventListener("click", () => {
+        if (!filteredSales.length) {
+          toast("No data to export", "warning");
+          return;
+        }
 
-  const headers = ['Reference','Date','Cashier','Customer','Payment','Total','Status'];
-  const rows = filteredSales.map(s => [
-    s.reference,
-    fmt.datetime(s.created_at),
-    s.cashier_name || '',
-    s.customer_name || 'Walk-in',
-    s.payment_method,
-    parseFloat(s.total_amount).toFixed(2),
-    s.payment_status
-  ]);
+        const headers = [
+          "Reference",
+          "Date",
+          "Cashier",
+          "Customer",
+          "Payment",
+          "Total",
+          "Status",
+        ];
+        const rows = filteredSales.map((s) => [
+          s.reference,
+          fmt.datetime(s.created_at),
+          s.cashier_name || "",
+          s.customer_name || "Walk-in",
+          s.payment_method,
+          parseFloat(s.total_amount).toFixed(2),
+          s.payment_status,
+        ]);
 
-  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `sales-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  toast('CSV downloaded!', 'success');
-});
+        const csv = [headers, ...rows]
+          .map((r) => r.map((v) => `"${v}"`).join(","))
+          .join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `sales-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        toast("CSV downloaded!", "success");
+      });
 
-// ── Init ──────────────────────────────────────
-loadSales();
-</script>
-</body>
+      // ── Init ──────────────────────────────────────
+      loadSales();
+    </script>
+  </body>
 </html>

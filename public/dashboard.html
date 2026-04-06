@@ -1,253 +1,524 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Dashboard — POS</title>
-  <link rel="stylesheet" href="/css/styles.css"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <style>
-    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
-    .span-2 { grid-column: span 2; }
-    .span-3 { grid-column: span 3; }
-    .period-tabs { display: flex; gap: 6px; margin-bottom: 20px; }
-    .period-tab { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); padding: 5px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; }
-    .period-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
-    .chart-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-muted); margin-bottom: 16px; }
-    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-    .low-stock-item { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-    .low-stock-item:last-child { border-bottom: none; }
-    .stock-bar-wrap { flex: 1; margin: 0 12px; height: 4px; background: var(--border); border-radius: 2px; }
-    .stock-bar { height: 4px; border-radius: 2px; background: var(--danger); }
-    .empty-chart { display: flex; align-items: center; justify-content: center; height: 160px; color: var(--text-muted); font-size: 13px; }
-  </style>
-</head>
-<body>
-<script src="/js/api.js"></script>
-<script src="/js/shell.js"></script>
-<script>requireAuth(); injectShell('dashboard');</script>
-
-<div class="page-header">
-  <div><h1>Dashboard</h1><p id="dash-subtitle">Loading…</p></div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <span style="font-size:12px;color:var(--text-muted)">Refresh in <span id="refresh-countdown">60</span>s</span>
-    <button class="btn btn-ghost btn-sm" id="refresh-btn">↺ Refresh</button>
-      <a href="/closing-report.html" class="btn btn-ghost btn-sm" style="text-decoration:none">📋 Closing Report</a>
-  </div>
-</div>
-
-<div class="period-tabs">
-  <button class="period-tab active" data-period="today">Today</button>
-  <button class="period-tab" data-period="week">7 Days</button>
-  <button class="period-tab" data-period="month">30 Days</button>
-</div>
-
-<div class="stat-row">
-  <div class="stat-card"><div class="label">Revenue</div><div class="value success" id="stat-revenue">—</div></div>
-  <div class="stat-card"><div class="label">Transactions</div><div class="value accent" id="stat-txns">—</div></div>
-  <div class="stat-card"><div class="label">Avg Sale Value</div><div class="value" id="stat-avg">—</div></div>
-  <div class="stat-card"><div class="label">Discounts Given</div><div class="value warning" id="stat-disc">—</div></div>
-</div>
-
-<div class="dashboard-grid">
-  <div class="chart-card span-2">
-    <div class="chart-title">Revenue Over Time</div>
-    <div style="position:relative;height:200px">
-      <canvas id="revenue-chart"></canvas>
-      <div class="empty-chart hidden" id="revenue-empty">No sales data yet</div>
-    </div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">Payment Methods</div>
-    <div style="position:relative;height:200px">
-      <canvas id="payment-chart"></canvas>
-      <div class="empty-chart hidden" id="payment-empty">No data yet</div>
-    </div>
-  </div>
-
-  <div class="chart-card span-2">
-    <div class="chart-title">Top Products by Units Sold</div>
-    <div style="position:relative;height:200px">
-      <canvas id="products-chart"></canvas>
-      <div class="empty-chart hidden" id="products-empty">No sales data yet</div>
-    </div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">⚠ Low Stock</div>
-    <div id="low-stock-list"><div class="empty-chart">Loading…</div></div>
-  </div>
-
-  <div class="chart-card span-3">
-    <div class="chart-title">Recent Transactions</div>
-    <div id="recent-sales-list"><div class="empty-chart">Loading…</div></div>
-  </div>
-</div>
-
-<script>
-let currentPeriod = 'today';
-let revenueChart, paymentChart, productsChart;
-let countdown = 60, countdownTimer;
-
-Chart.defaults.color = '#8b8fa8';
-Chart.defaults.font.family = "'DM Sans', sans-serif";
-Chart.defaults.font.size = 12;
-const C = { accent:'#6c63ff', accent2:'#00d4aa', warning:'#ffb547', danger:'#ff4f6d', muted:'#2e3148' };
-
-function destroyChart(c) { if (c) { try { c.destroy(); } catch(_){} } }
-
-function buildRevenueChart(labels, values) {
-  destroyChart(revenueChart);
-  const canvas = document.getElementById('revenue-chart');
-  const empty  = document.getElementById('revenue-empty');
-  const hasData = values.some(v => v > 0);
-  empty.classList.toggle('hidden', hasData);
-  canvas.style.display = hasData ? '' : 'none';
-  if (!hasData) return;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0,0,0,200);
-  grad.addColorStop(0, 'rgba(108,99,255,0.3)');
-  grad.addColorStop(1, 'rgba(108,99,255,0)');
-  revenueChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets: [{ data: values, borderColor: C.accent, backgroundColor: grad, borderWidth: 2, pointBackgroundColor: C.accent, pointRadius: 3, fill: true, tension: 0.4 }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` GHS ${parseFloat(c.raw).toFixed(2)}` } } },
-      scales: {
-        x: { grid: { color: C.muted }, ticks: { maxRotation: 0, maxTicksLimit: 8 } },
-        y: { grid: { color: C.muted }, beginAtZero: true, ticks: { callback: v => `GHS ${v}` } }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — POS</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 20px;
       }
-    }
-  });
-}
+      .span-2 {
+        grid-column: span 2;
+      }
+      .span-3 {
+        grid-column: span 3;
+      }
+      .period-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 20px;
+      }
+      .period-tab {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        padding: 5px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.15s;
+      }
+      .period-tab.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .chart-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+      }
+      .chart-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: var(--text-muted);
+        margin-bottom: 16px;
+      }
+      .stat-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      .low-stock-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .low-stock-item:last-child {
+        border-bottom: none;
+      }
+      .stock-bar-wrap {
+        flex: 1;
+        margin: 0 12px;
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+      }
+      .stock-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--danger);
+      }
+      .empty-chart {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 160px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="/js/api.js"></script>
+    <script src="/js/shell.js"></script>
+    <script>
+      requireAuth();
+      injectShell("dashboard");
+    </script>
 
-function buildPaymentChart(labels, values) {
-  destroyChart(paymentChart);
-  const canvas = document.getElementById('payment-chart');
-  const empty  = document.getElementById('payment-empty');
-  const hasData = values.some(v => v > 0);
-  empty.classList.toggle('hidden', hasData);
-  canvas.style.display = hasData ? '' : 'none';
-  if (!hasData) return;
-  const colors = { cash: C.accent2, mobile_money: C.accent, card: C.warning, split: C.danger };
-  const niceLabels = { cash:'Cash', mobile_money:'Mobile Money', card:'Card', split:'Split' };
-  paymentChart = new Chart(canvas, {
-    type: 'doughnut',
-    data: { labels: labels.map(l => niceLabels[l]||l), datasets: [{ data: values, backgroundColor: labels.map(l => colors[l]||C.muted), borderWidth: 2, borderColor: '#1a1d27', hoverOffset: 6 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position:'bottom', labels: { boxWidth:10, padding:12 } }, tooltip: { callbacks: { label: c => ` GHS ${parseFloat(c.raw).toFixed(2)}` } } } }
-  });
-}
+    <div class="main-content">
+      <div class="page-header">
+        <div>
+          <h1>Dashboard</h1>
+          <p id="dash-subtitle">Loading…</p>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center">
+          <span style="font-size: 12px; color: var(--text-muted)"
+            >Refresh in <span id="refresh-countdown">60</span>s</span
+          >
+          <button class="btn btn-ghost btn-sm" id="refresh-btn">
+            ↺ Refresh
+          </button>
+          <a
+            href="/closing-report.html"
+            class="btn btn-ghost btn-sm"
+            style="text-decoration: none"
+            >📋 Closing Report</a
+          >
+        </div>
+      </div>
 
-function buildProductsChart(labels, values) {
-  destroyChart(productsChart);
-  const canvas = document.getElementById('products-chart');
-  const empty  = document.getElementById('products-empty');
-  const hasData = values.some(v => v > 0);
-  empty.classList.toggle('hidden', hasData);
-  canvas.style.display = hasData ? '' : 'none';
-  if (!hasData) return;
-  productsChart = new Chart(canvas, {
-    type: 'bar',
-    data: { labels, datasets: [{ label:'Units Sold', data: values, backgroundColor: C.accent, borderRadius: 4, borderSkipped: false }] },
-    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { grid: { color: C.muted }, beginAtZero: true }, y: { grid: { display: false } } } }
-  });
-}
+      <div class="period-tabs">
+        <button class="period-tab active" data-period="today">Today</button>
+        <button class="period-tab" data-period="week">7 Days</button>
+        <button class="period-tab" data-period="month">30 Days</button>
+      </div>
 
-function renderLowStock(items) {
-  const el = document.getElementById('low-stock-list');
-  if (!items.length) { el.innerHTML = '<div class="empty-chart" style="height:120px">All products well stocked ✓</div>'; return; }
-  const max = Math.max(...items.map(p => p.low_stock_threshold * 2), 1);
-  el.innerHTML = items.slice(0,6).map(p => {
-    const pct = Math.min(100, (p.quantity/max)*100);
-    return `<div class="low-stock-item"><span style="font-weight:600;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span><div class="stock-bar-wrap"><div class="stock-bar" style="width:${pct}%"></div></div><span class="badge badge-danger">${p.quantity}</span></div>`;
-  }).join('');
-}
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="label">Revenue</div>
+          <div class="value success" id="stat-revenue">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Transactions</div>
+          <div class="value accent" id="stat-txns">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Avg Sale Value</div>
+          <div class="value" id="stat-avg">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Discounts Given</div>
+          <div class="value warning" id="stat-disc">—</div>
+        </div>
+      </div>
 
-function renderRecentSales(sales) {
-  const el = document.getElementById('recent-sales-list');
-  if (!sales.length) { el.innerHTML = '<div class="empty-chart" style="height:80px">No recent transactions</div>'; return; }
-  const ml = { cash:'Cash', mobile_money:'Mobile', card:'Card', split:'Split' };
-  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">` +
-    sales.slice(0,6).map(s => `
+      <div class="dashboard-grid">
+        <div class="chart-card span-2">
+          <div class="chart-title">Revenue Over Time</div>
+          <div style="position: relative; height: 200px">
+            <canvas id="revenue-chart"></canvas>
+            <div class="empty-chart hidden" id="revenue-empty">
+              No sales data yet
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-title">Payment Methods</div>
+          <div style="position: relative; height: 200px">
+            <canvas id="payment-chart"></canvas>
+            <div class="empty-chart hidden" id="payment-empty">No data yet</div>
+          </div>
+        </div>
+
+        <div class="chart-card span-2">
+          <div class="chart-title">Top Products by Units Sold</div>
+          <div style="position: relative; height: 200px">
+            <canvas id="products-chart"></canvas>
+            <div class="empty-chart hidden" id="products-empty">
+              No sales data yet
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-title">⚠ Low Stock</div>
+          <div id="low-stock-list"><div class="empty-chart">Loading…</div></div>
+        </div>
+
+        <div class="chart-card span-3">
+          <div class="chart-title">Recent Transactions</div>
+          <div id="recent-sales-list">
+            <div class="empty-chart">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      let currentPeriod = "today";
+      let revenueChart, paymentChart, productsChart;
+      let countdown = 60,
+        countdownTimer;
+
+      Chart.defaults.color = "#8b8fa8";
+      Chart.defaults.font.family = "'DM Sans', sans-serif";
+      Chart.defaults.font.size = 12;
+      const C = {
+        accent: "#6c63ff",
+        accent2: "#00d4aa",
+        warning: "#ffb547",
+        danger: "#ff4f6d",
+        muted: "#2e3148",
+      };
+
+      function destroyChart(c) {
+        if (c) {
+          try {
+            c.destroy();
+          } catch (_) {}
+        }
+      }
+
+      function buildRevenueChart(labels, values) {
+        destroyChart(revenueChart);
+        const canvas = document.getElementById("revenue-chart");
+        const empty = document.getElementById("revenue-empty");
+        const hasData = values.some((v) => v > 0);
+        empty.classList.toggle("hidden", hasData);
+        canvas.style.display = hasData ? "" : "none";
+        if (!hasData) return;
+        const ctx = canvas.getContext("2d");
+        const grad = ctx.createLinearGradient(0, 0, 0, 200);
+        grad.addColorStop(0, "rgba(108,99,255,0.3)");
+        grad.addColorStop(1, "rgba(108,99,255,0)");
+        revenueChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                data: values,
+                borderColor: C.accent,
+                backgroundColor: grad,
+                borderWidth: 2,
+                pointBackgroundColor: C.accent,
+                pointRadius: 3,
+                fill: true,
+                tension: 0.4,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (c) => ` GHS ${parseFloat(c.raw).toFixed(2)}`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                grid: { color: C.muted },
+                ticks: { maxRotation: 0, maxTicksLimit: 8 },
+              },
+              y: {
+                grid: { color: C.muted },
+                beginAtZero: true,
+                ticks: { callback: (v) => `GHS ${v}` },
+              },
+            },
+          },
+        });
+      }
+
+      function buildPaymentChart(labels, values) {
+        destroyChart(paymentChart);
+        const canvas = document.getElementById("payment-chart");
+        const empty = document.getElementById("payment-empty");
+        const hasData = values.some((v) => v > 0);
+        empty.classList.toggle("hidden", hasData);
+        canvas.style.display = hasData ? "" : "none";
+        if (!hasData) return;
+        const colors = {
+          cash: C.accent2,
+          mobile_money: C.accent,
+          card: C.warning,
+          split: C.danger,
+        };
+        const niceLabels = {
+          cash: "Cash",
+          mobile_money: "Mobile Money",
+          card: "Card",
+          split: "Split",
+        };
+        paymentChart = new Chart(canvas, {
+          type: "doughnut",
+          data: {
+            labels: labels.map((l) => niceLabels[l] || l),
+            datasets: [
+              {
+                data: values,
+                backgroundColor: labels.map((l) => colors[l] || C.muted),
+                borderWidth: 2,
+                borderColor: "#1a1d27",
+                hoverOffset: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "68%",
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: { boxWidth: 10, padding: 12 },
+              },
+              tooltip: {
+                callbacks: {
+                  label: (c) => ` GHS ${parseFloat(c.raw).toFixed(2)}`,
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function buildProductsChart(labels, values) {
+        destroyChart(productsChart);
+        const canvas = document.getElementById("products-chart");
+        const empty = document.getElementById("products-empty");
+        const hasData = values.some((v) => v > 0);
+        empty.classList.toggle("hidden", hasData);
+        canvas.style.display = hasData ? "" : "none";
+        if (!hasData) return;
+        productsChart = new Chart(canvas, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Units Sold",
+                data: values,
+                backgroundColor: C.accent,
+                borderRadius: 4,
+                borderSkipped: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { grid: { color: C.muted }, beginAtZero: true },
+              y: { grid: { display: false } },
+            },
+          },
+        });
+      }
+
+      function renderLowStock(items) {
+        const el = document.getElementById("low-stock-list");
+        if (!items.length) {
+          el.innerHTML =
+            '<div class="empty-chart" style="height:120px">All products well stocked ✓</div>';
+          return;
+        }
+        const max = Math.max(...items.map((p) => p.low_stock_threshold * 2), 1);
+        el.innerHTML = items
+          .slice(0, 6)
+          .map((p) => {
+            const pct = Math.min(100, (p.quantity / max) * 100);
+            return `<div class="low-stock-item"><span style="font-weight:600;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span><div class="stock-bar-wrap"><div class="stock-bar" style="width:${pct}%"></div></div><span class="badge badge-danger">${p.quantity}</span></div>`;
+          })
+          .join("");
+      }
+
+      function renderRecentSales(sales) {
+        const el = document.getElementById("recent-sales-list");
+        if (!sales.length) {
+          el.innerHTML =
+            '<div class="empty-chart" style="height:80px">No recent transactions</div>';
+          return;
+        }
+        const ml = {
+          cash: "Cash",
+          mobile_money: "Mobile",
+          card: "Card",
+          split: "Split",
+        };
+        el.innerHTML =
+          `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">` +
+          sales
+            .slice(0, 6)
+            .map(
+              (s) => `
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
         <div style="display:flex;justify-content:space-between">
           <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${s.reference}</span>
-          <span class="badge badge-info">${ml[s.payment_method]||s.payment_method}</span>
+          <span class="badge badge-info">${ml[s.payment_method] || s.payment_method}</span>
         </div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:5px">${fmt.datetime(s.created_at)}</div>
-        <div style="font-size:12px;margin-top:2px">${s.cashier_name||'—'}</div>
+        <div style="font-size:12px;margin-top:2px">${s.cashier_name || "—"}</div>
         <div style="font-family:var(--mono);color:var(--accent2);font-weight:700;margin-top:6px">${fmt.currency(s.total_amount)}</div>
-      </div>`).join('') + `</div>`;
-}
+      </div>`,
+            )
+            .join("") +
+          `</div>`;
+      }
 
-async function loadDashboard() {
-  document.getElementById('dash-subtitle').textContent = { today:"Today's overview", week:"Last 7 days", month:"Last 30 days" }[currentPeriod];
-  try {
-    const [summaryData, topData, lowData, recentData] = await Promise.all([
-      api.get(`/reports/sales-summary?period=${currentPeriod}`),
-      api.get(`/reports/top-products?period=${currentPeriod}&limit=6`),
-      api.get('/products/low-stock'),
-      api.get('/sales?limit=6'),
-    ]);
+      async function loadDashboard() {
+        document.getElementById("dash-subtitle").textContent = {
+          today: "Today's overview",
+          week: "Last 7 days",
+          month: "Last 30 days",
+        }[currentPeriod];
+        try {
+          const [summaryData, topData, lowData, recentData] = await Promise.all(
+            [
+              api.get(`/reports/sales-summary?period=${currentPeriod}`),
+              api.get(`/reports/top-products?period=${currentPeriod}&limit=6`),
+              api.get("/products/low-stock"),
+              api.get("/sales?limit=6"),
+            ],
+          );
 
-    const s = summaryData.summary;
-    document.getElementById('stat-revenue').textContent = fmt.currency(s.total_revenue||0);
-    document.getElementById('stat-txns').textContent    = s.total_transactions||0;
-    document.getElementById('stat-avg').textContent     = fmt.currency(s.avg_sale_value||0);
-    document.getElementById('stat-disc').textContent    = fmt.currency(s.total_discounts||0);
+          const s = summaryData.summary;
+          document.getElementById("stat-revenue").textContent = fmt.currency(
+            s.total_revenue || 0,
+          );
+          document.getElementById("stat-txns").textContent =
+            s.total_transactions || 0;
+          document.getElementById("stat-avg").textContent = fmt.currency(
+            s.avg_sale_value || 0,
+          );
+          document.getElementById("stat-disc").textContent = fmt.currency(
+            s.total_discounts || 0,
+          );
 
-    // Revenue line: hourly for today, daily otherwise
-    if (currentPeriod === 'today') {
-      const byHour = {};
-      (summaryData.hourly_breakdown||[]).forEach(r => byHour[parseInt(r.hour)] = parseFloat(r.total));
-      const hours = Array.from({length:24}, (_,i)=>i);
-      buildRevenueChart(hours.map(h=>`${String(h).padStart(2,'0')}:00`), hours.map(h=>byHour[h]||0));
-    } else {
-      const allSales = await api.get('/sales?limit=500');
-      const cutoff = currentPeriod === 'week' ? 7 : 30;
-      const days = {};
-      allSales.forEach(sale => {
-        if (sale.payment_status !== 'completed') return;
-        const d = sale.created_at.slice(0,10);
-        if ((Date.now() - new Date(d)) / 86400000 <= cutoff) days[d] = (days[d]||0) + parseFloat(sale.total_amount);
+          // Revenue line: hourly for today, daily otherwise
+          if (currentPeriod === "today") {
+            const byHour = {};
+            (summaryData.hourly_breakdown || []).forEach(
+              (r) => (byHour[parseInt(r.hour)] = parseFloat(r.total)),
+            );
+            const hours = Array.from({ length: 24 }, (_, i) => i);
+            buildRevenueChart(
+              hours.map((h) => `${String(h).padStart(2, "0")}:00`),
+              hours.map((h) => byHour[h] || 0),
+            );
+          } else {
+            const allSales = await api.get("/sales?limit=500");
+            const cutoff = currentPeriod === "week" ? 7 : 30;
+            const days = {};
+            allSales.forEach((sale) => {
+              if (sale.payment_status !== "completed") return;
+              const d = sale.created_at.slice(0, 10);
+              if ((Date.now() - new Date(d)) / 86400000 <= cutoff)
+                days[d] = (days[d] || 0) + parseFloat(sale.total_amount);
+            });
+            const sorted = Object.keys(days).sort();
+            buildRevenueChart(
+              sorted.map((d) =>
+                new Date(d).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                }),
+              ),
+              sorted.map((d) => days[d]),
+            );
+          }
+
+          const pm = summaryData.by_payment_method || [];
+          buildPaymentChart(
+            pm.map((r) => r.payment_method),
+            pm.map((r) => parseFloat(r.total)),
+          );
+          buildProductsChart(
+            topData.map((p) =>
+              p.product_name.length > 20
+                ? p.product_name.slice(0, 18) + "…"
+                : p.product_name,
+            ),
+            topData.map((p) => parseInt(p.units_sold)),
+          );
+          renderLowStock(lowData);
+          renderRecentSales(recentData);
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }
+
+      document.querySelectorAll(".period-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document
+            .querySelectorAll(".period-tab")
+            .forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentPeriod = btn.dataset.period;
+          loadDashboard();
+        });
       });
-      const sorted = Object.keys(days).sort();
-      buildRevenueChart(sorted.map(d=>new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})), sorted.map(d=>days[d]));
-    }
 
-    const pm = summaryData.by_payment_method||[];
-    buildPaymentChart(pm.map(r=>r.payment_method), pm.map(r=>parseFloat(r.total)));
-    buildProductsChart(topData.map(p=>p.product_name.length>20?p.product_name.slice(0,18)+'…':p.product_name), topData.map(p=>parseInt(p.units_sold)));
-    renderLowStock(lowData);
-    renderRecentSales(recentData);
-  } catch(e) { toast(e.message,'error'); }
-}
+      function startCountdown() {
+        clearInterval(countdownTimer);
+        countdown = 60;
+        countdownTimer = setInterval(() => {
+          countdown--;
+          document.getElementById("refresh-countdown").textContent = countdown;
+          if (countdown <= 0) {
+            loadDashboard();
+            countdown = 60;
+          }
+        }, 1000);
+      }
 
-document.querySelectorAll('.period-tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.period-tab').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    currentPeriod = btn.dataset.period;
-    loadDashboard();
-  });
-});
-
-function startCountdown() {
-  clearInterval(countdownTimer);
-  countdown = 60;
-  countdownTimer = setInterval(() => {
-    countdown--;
-    document.getElementById('refresh-countdown').textContent = countdown;
-    if (countdown <= 0) { loadDashboard(); countdown = 60; }
-  }, 1000);
-}
-
-document.getElementById('refresh-btn').addEventListener('click', () => { loadDashboard(); startCountdown(); });
-loadDashboard();
-startCountdown();
-</script>
-</body>
+      document.getElementById("refresh-btn").addEventListener("click", () => {
+        loadDashboard();
+        startCountdown();
+      });
+      loadDashboard();
+      startCountdown();
+    </script>
+  </body>
 </html>

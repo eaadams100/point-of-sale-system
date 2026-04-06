@@ -83,6 +83,10 @@ async function getLogs(req, res) {
     const { rows } = await db.query(q, params);
     res.json(rows);
   } catch (err) {
+    // Table not yet migrated — return empty array so the page renders cleanly
+    if (err.message.includes('does not exist')) {
+      return res.json([]);
+    }
     res.status(500).json({ error: err.message });
   }
 }

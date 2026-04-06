@@ -221,3 +221,22 @@ CREATE TABLE IF NOT EXISTS paystack_transactions (
 
 CREATE INDEX IF NOT EXISTS idx_paystack_ref ON paystack_transactions(reference);
 CREATE INDEX IF NOT EXISTS idx_paystack_sale ON paystack_transactions(sale_id);
+
+
+-- Custom payment transactions table
+CREATE TABLE IF NOT EXISTS custom_payments (
+  id SERIAL PRIMARY KEY,
+  reference VARCHAR(50) UNIQUE NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  provider VARCHAR(20) NOT NULL,
+  status VARCHAR(20) DEFAULT 'pending', -- pending, success, failed
+  gateway_response JSONB,
+  sale_id INTEGER REFERENCES sales(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_custom_payments_reference ON custom_payments(reference);
+CREATE INDEX IF NOT EXISTS idx_custom_payments_status ON custom_payments(status);

@@ -21,7 +21,10 @@ exports.getAll = async (req, res) => {
     q += ` ORDER BY e.date DESC, e.created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`;
     const { rows } = await db.query(q, params);
     res.json(rows);
-  } catch(err) { res.status(500).json({ error: err.message }); }
+  } catch(err) {
+    if (err.message.includes('does not exist')) return res.json([]);
+    res.status(500).json({ error: err.message });
+  }
 };
 
 exports.getSummary = async (req, res) => {
@@ -45,7 +48,10 @@ exports.getSummary = async (req, res) => {
 
     const total = byCategory.reduce((s, r) => s + parseFloat(r.total), 0);
     res.json({ total, by_category: byCategory, daily });
-  } catch(err) { res.status(500).json({ error: err.message }); }
+  } catch(err) {
+    if (err.message.includes('does not exist')) return res.json({ total: 0, by_category: [], daily: [] });
+    res.status(500).json({ error: err.message });
+  }
 };
 
 exports.create = async (req, res) => {
